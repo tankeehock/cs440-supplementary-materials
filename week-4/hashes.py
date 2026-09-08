@@ -5,8 +5,11 @@
 """
 Hashing & HMAC — a short, stage-by-stage tutorial.
 
-Run:  python hash_hmac_tutorial.py      (press Enter to move between stages)
-      python hash_hmac_tutorial.py | cat (or pipe: runs all stages, no pauses)
+Run:  uv run week-4/hashes.py            (Enter=next, b=back, 1-5=jump, q=quit)
+      uv run week-4/hashes.py | cat     (runs all stages, no pauses)
+
+Stage 5 hands off to rsa_signatures.py in this folder, which solves the same
+authenticity problem with a key pair instead of a shared secret.
 
 Only the standard library is used (hashlib, hmac). The from-scratch SHA-256
 in Stage 4 is for teaching the length-extension attack; use hashlib in real
@@ -15,6 +18,7 @@ code.
 
 import hashlib
 import hmac
+import math
 import os
 import struct
 import sys
@@ -31,6 +35,18 @@ def diagram(block: str) -> None:
     """Print a multi-line ASCII diagram, preserving its internal spacing."""
     for line in block.strip("\n").splitlines():
         p(line)
+    p()
+
+
+def step(title: str) -> None:
+    """A labelled sub-section inside a stage, so long stages stay navigable."""
+    p()
+    if len(title) <= 46:
+        p(f"--- {title} " + "-" * (50 - len(title)))
+    else:
+        p("-" * 54)
+        p(f"    {title}")
+        p("-" * 54)
     p()
 
 
@@ -159,8 +175,48 @@ def stage2() -> None:
     p("A COLLISION is two different inputs with the SAME fingerprint.")
     p("Good hashes make these infeasible to find. Two demos:")
     p()
-    p("(a) Watch one happen. Shrink SHA-256 to 32 bits (first 8 hex")
-    p("    digits) and try random inputs until two land on the same value:")
+    p("(a) Watch one happen. But first: why we have to SHRINK the hash")
+    p("    before a collision is something you can see in a lecture.")
+    p()
+    p("    An n-bit hash has 2^n possible outputs. Inputs are unlimited,")
+    p("    so by the PIGEONHOLE PRINCIPLE collisions must exist. The")
+    p("    security question is never 'do they exist' - it is 'how long")
+    p("    would you have to search to find one?'")
+    p()
+    p("    The BIRTHDAY BOUND answers that: you expect a collision after")
+    p("    about 2^(n/2) random inputs, not 2^n. Each new fingerprint is")
+    p("    checked against EVERY fingerprint already seen, so after k")
+    p("    tries you have k*(k-1)/2 pairs - the pairs grow quadratically,")
+    p("    so k only needs to reach the SQUARE ROOT of the output space.")
+    p("    Collision resistance is therefore only HALF the output bits.")
+    p()
+    diagram("""
+      output size       distinct outputs   expected tries   can we demo it?
+      ---------------   ----------------   --------------   ----------------
+       32 bits (here)    4.3 x 10^9         ~2^16 = 65,000   yes, instantly
+       64 bits           1.8 x 10^19        ~2^32 = 4.3e9    hours, many GB
+      128 bits (MD5)     3.4 x 10^38        ~2^64 = 1.8e19   no
+      256 bits (SHA-256) 1.2 x 10^77        ~2^128 = 3.4e38  never""")
+    p("    Read the bottom row: a real SHA-256 collision needs ~2^128")
+    p("    hashes. No amount of hardware or time on Earth gets there, which")
+    p("    is exactly the property we want - and exactly why we cannot")
+    p("    demonstrate it live.")
+    p()
+    p("    So we do not weaken SHA-256 at all. We run the real, unmodified")
+    p("    SHA-256 and simply LOOK AT its first 32 bits (8 hex digits),")
+    p("    throwing the other 224 away. Truncation shrinks only the TARGET")
+    p("    SPACE, so the identical birthday maths plays out in front of you")
+    p("    in under a second. It is a scale model, not a broken hash.")
+    p()
+    p("    Why 32 and not some other size? It is the sweet spot for a live")
+    p("    demo: ~65,000 tries takes a moment, and the table of seen")
+    p("    fingerprints stays small enough to hold in memory. At 64 bits")
+    p("    the same demo would need ~4.3 billion tries and gigabytes of")
+    p("    storage; at 16 bits it would finish so fast (~256 tries) that")
+    p("    the birthday effect would not be convincing.")
+    p()
+    p("    Now: try random 6-byte inputs until two share the same 8 hex")
+    p("    digits.")
     seen: dict[str, bytes] = {}
     tries = 0
     while True:
@@ -174,11 +230,24 @@ def stage2() -> None:
     p()
     p(f"      input A = {y.hex()}   ->  {fp}")
     p(f"      input B = {x.hex()}   ->  {fp}   <- SAME fingerprint!")
-    p(f"      found after only {tries:,} tries")
+    expected = math.sqrt(math.pi / 2 * 2 ** 32)
+    p(f"      found after only {tries:,} tries "
+      f"(birthday estimate ~{expected:,.0f})")
     p()
-    p("    Hitting one CHOSEN target would need ~2^32 (4.3 billion) tries.")
-    p("    Finding ANY colliding pair needs on the order of 2^16 (~65,000)")
-    p("    - the 'birthday' shortcut. Collision strength is HALF the bits.")
+    p(f"    Notice how far short of 2^32 that is - only "
+      f"{tries / 2 ** 32 * 100:.4f}% of")
+    p("    the output space had to be sampled. Compare the two jobs:")
+    p()
+    p("      find ANY colliding pair   ~2^16 (~65,000) tries   <- just done")
+    p("      match a CHOSEN target     ~2^32 (4.3 billion)     no shortcut")
+    p()
+    p("    The second job is a SECOND-PREIMAGE: the fingerprint is fixed in")
+    p("    advance, so you cannot play new inputs off each other and the")
+    p("    birthday shortcut disappears. An attacker who only needs SOME")
+    p("    collision (two contracts, two certificates, two updates) always")
+    p("    gets the cheaper of the two - so a hash must be sized against")
+    p("    the birthday bound, not the full output length. That is why")
+    p("    SHA-256 is 256 bits wide to deliver 128-bit security.")
     p()
     p("(b) A real collision in a real hash. Below is the FULL content of")
     p("    two different 128-byte messages (Wang et al. 2004), in hex.")
@@ -335,7 +404,19 @@ ATTACK (no key needed - start the machine AT 'tag' and keep pouring):
 
 def stage4() -> None:
     head(4, 5, "The attack: why hash(key + message) is unsafe")
-    p("First, the goal in plain terms.")
+    p("This is the longest stage, so here is the shape of it first:")
+    p()
+    p("    A. the tempting recipe        tag = sha256(key + message)")
+    p("    B. how SHA-256 really works   and what its output leaks")
+    p("    C. the trick, with NO key     extend a hash you did not make")
+    p("    D. the forgery, WITH a key    guest promotes itself to admin")
+    p("    E. what is vulnerable         and how to fix it")
+    p()
+    p("Parts A and B are the idea; C proves the idea works; D turns it")
+    p("into an attack. If you only read one part, read B.")
+
+    # ---------------------------------------------------------------- A ---
+    step("A. The tempting recipe")
     p("A website often sends a little note about you, such as:")
     p("    user=guest&role=viewer")
     p("and attaches a TAG: a short code meant to prove the note is genuine")
@@ -343,61 +424,96 @@ def stage4() -> None:
     p()
     p("To make the seal, the two sides share a secret KEY only they know.")
     p("A common recipe is:")
-    p("    tag = sha256(key + message)")
-    p("The idea: only someone with the key can make a matching tag, so if")
-    p("the tag checks out, the note must be real. It sounds solid. It isn't.")
     p()
-    p("To see why, picture SHA-256 as a machine with a little display:")
+    p("    tag = sha256(key + message)")
+    p()
+    p("The idea: only someone with the key can make a matching tag, so if")
+    p("the tag checks out, the note must be real.")
+    p()
+    p("It sounds solid. It is broken, and not because SHA-256 is weak.")
+
+    # ---------------------------------------------------------------- B ---
+    step("B. What a SHA-256 digest actually is")
+    p("Picture SHA-256 as a machine with a little display:")
     p("  - you pour your data in, one scoop at a time")
     p("  - after each scoop it updates a number shown on the display")
     p("    (the new number depends on the old number plus the new scoop)")
     p("  - when you finish, the number on the display IS the fingerprint")
     p()
     diagram(_DIAG_MACHINE)
-    p("The catch: the fingerprint is simply the display's current value.")
-    p("Anyone who knows that value can put it back on the display and pour")
-    p("in MORE scoops - continuing the hash from where it stopped, without")
-    p("knowing what came before. That is the whole attack. Let's watch it,")
-    p("first with NO key involved.")
+    p("That machine has a name. SHA-256 is a MERKLE-DAMGARD hash, and the")
+    p("number on the display is its INTERNAL STATE (or 'chaining value'):")
+    p("8 words of 32 bits = 32 bytes. Now count the output of SHA-256:")
+    p("also 32 bytes. That is not a coincidence. When the data runs out,")
+    p("the state is handed straight over AS the fingerprint - there is no")
+    p("final scrambling step to disguise it.")
     p()
-    p("STEP 1 - hash some ordinary text X (nothing secret):")
+    p("    A SHA-256 DIGEST IS NOT A SUMMARY OF THE MESSAGE.")
+    p("    IT IS A SNAPSHOT OF THE MACHINE.")
+    p()
+    p("Anyone holding that value can put it back on the display and pour")
+    p("in MORE scoops - continuing the hash from where it stopped, without")
+    p("knowing what came before.")
+    p()
+    p("That is the whole attack. Everything below is detail.")
+
+    # ---------------------------------------------------------------- C ---
+    step("C. The trick, with no key in sight")
+    p("Before touching secrets, let us just prove the machine resumes.")
+    p()
+    p("C1. Hash some ordinary text X (nothing secret):")
     X = b"amount=10"
     dX = hashlib.sha256(X).digest()          # the fingerprint, real library
     mine = my_sha256(X)                       # our teaching 'machine'
-    p(f"    X                       = {X.decode()}")
-    p(f"    hashlib.sha256(X)       = {dX.hex()}")
-    p(f"    our teaching machine    = {mine.hex()}")
-    p(f"    identical?  {'YES' if mine == dX else 'no'}  <- our 'machine' really"
-      f" is SHA-256, so")
-    p("                 everything below is genuine, not faked.")
+    p(f"      X                    = {X.decode()}")
+    p(f"      hashlib.sha256(X)    = {dX.hex()}")
+    p(f"      our teaching machine = {mine.hex()}")
+    p(f"      identical?  {'YES' if mine == dX else 'no'}")
+    p("      Our 'machine' really is SHA-256, so nothing below is faked.")
     p()
-    p("STEP 2 - now pretend we DON'T know X. We know only its fingerprint")
-    p("         and that X was 9 characters long. Can we keep hashing? Yes.")
+    p("C2. Now forget X. We keep only its fingerprint, and the fact that")
+    p("    X was 9 bytes long. Can we carry on hashing? Yes - but first")
+    p("    we must rebuild the FILLER that SHA-256 added at the end.")
     E = b"&admin=1"
     glue = _pad(len(X))
     zeros = len(glue) - 1 - 8
+    p()
     p("    The machine works in fixed 64-byte scoops, so after your 9")
-    p("    characters it tops up the last scoop with filler ('padding'):")
-    p(f"      1 marker byte + {zeros} zero bytes + an 8-byte length "
-      f"= {len(glue)} bytes")
-    p("    We put the fingerprint back on the display and pour in our own")
+    p("    bytes it tops up the last scoop. The padding rule is public -")
+    p("    every SHA-256 does it identically - so it can be reconstructed:")
+    p()
+    p(f"      marker : {glue[:1].hex():<18}a single 1 bit, then zeros")
+    p(f"      zeros  : {f'{zeros} x 00':<18}pad to 8 bytes short of a full"
+      f" scoop")
+    p(f"      length : {glue[-8:].hex():<18}{len(X) * 8} bits ({len(X)}"
+      f" bytes), 64-bit big-endian")
+    p(f"      {'':<27}-> {len(glue)} filler bytes in total")
+    p()
+    p("    Read that length field again: the filler depends on HOW LONG")
+    p("    the message was, never on what it SAID. Knowing the length is")
+    p("    enough. Knowing X is not required. Remember this - in part D")
+    p("    the length is the one thing the attacker has to guess.")
+    p()
+    p("C3. Put the fingerprint back on the display and pour in our own")
     p(f'    extra text E = "{E.decode()}":')
     forged = sha256_extend(dX, len(X) + len(glue), E)
     p(f"      new fingerprint = {forged.hex()}")
     p()
-    p("STEP 3 - is that a REAL fingerprint of the longer text? Check with")
-    p("         Python's real library, hashing the whole thing start to end:")
+    p("C4. Is that a REAL fingerprint of the longer text? Ask the library,")
+    p("    hashing the whole thing from start to finish:")
     normal = hashlib.sha256(X + glue + E).digest()
     p(f"      hashlib.sha256( X + filler + E ) = {normal.hex()}")
     p(f"      our extended fingerprint         = {forged.hex()}")
-    p(f"      same?  {'YES' if forged == normal else 'no'}  <- the real library"
-      f" agrees. We built")
-    p("             the hash of (X + filler + our text) knowing only X's")
-    p("             fingerprint - never X itself. THAT is length extension.")
+    p(f"      same?  {'YES' if forged == normal else 'no'}")
     p()
-    p("Now the damage. Replace X with the secret (key + message). The")
-    p("attacker never sees the key, but the website publishes the tag, and")
-    p("a key's length is easy to guess:")
+    p("    We produced the hash of (X + filler + our text) knowing only")
+    p("    X's fingerprint - never X itself. That is LENGTH EXTENSION.")
+
+    # ---------------------------------------------------------------- D ---
+    step("D. The forgery: now X is (key + message)")
+    p("The attacker never sees the key. But the website publishes the")
+    p("tag, and the tag is the machine's state after it swallowed the key")
+    p("AND the message. So the attacker can keep pouring.")
     p()
     diagram(_DIAG_ATTACK)
     key = os.urandom(16)
@@ -407,34 +523,143 @@ def stage4() -> None:
     p(f"    tag they see     = {tag.hex()[:32]}...")
     p(f"    key              = 16 secret bytes (they do NOT have it)")
     p()
-    p("Using the exact STEP 2 trick, they tack on their own text and get a")
-    p("valid tag for it:")
-    guess = 16
-    glue2 = _pad(guess + len(message))
     evil = b"&role=admin"
-    forged_tag = sha256_extend(tag, guess + len(message) + len(glue2), evil)
-    forged_msg = message + glue2 + evil
-    p(f'    they append "{evil.decode()}"')
-    p(f"    forged tag = {forged_tag.hex()[:32]}...")
+
+    def server_accepts(note: bytes, claimed_tag: bytes) -> bool:
+        """The website: re-hash with the REAL key and compare."""
+        return hmac.compare_digest(hashlib.sha256(key + note).digest(),
+                                   claimed_tag)
+
+    p("D1. The obvious attempt first - edit the note, resend the old tag,")
+    p("    no cleverness at all:")
+    p(f'      note = "{(message + evil).decode()}"')
+    p(f"      tag  = the one they were given")
+    p(f"      website accepts?  "
+      f"{'YES' if server_accepts(message + evil, tag) else 'NO'}"
+      f"  <- the tag really does bind the note")
     p()
-    p("The website re-checks with the REAL key using the real library:")
+    p("    Good: the tag is doing its job against casual editing. The")
+    p("    break is not EDITING, it is RESUMING.")
+    p()
+    p("D2. To resume, the attacker must rebuild the filler, and for that")
+    p("    they need the length of (key + message). They can see the")
+    p("    message. The key length they must guess - and that is cheap:")
+    p("    keys are realistically under 64 bytes, and each guess costs")
+    p("    one request to the website, which answers accept/reject free.")
+    p()
+    attempts = 0
+    for guess in range(1, 65):
+        attempts += 1
+        glue2 = _pad(guess + len(message))
+        candidate_tag = sha256_extend(tag, guess + len(message) + len(glue2),
+                                      evil)
+        candidate_msg = message + glue2 + evil
+        if server_accepts(candidate_msg, candidate_tag):
+            forged_tag, forged_msg = candidate_tag, candidate_msg
+            break
+    p(f'      they append "{evil.decode()}" and try key lengths 1, 2, 3, ...')
+    p(f"      guess {guess} bytes -> ACCEPTED, after {attempts} tries")
+    p(f"      (the key really is {len(key)} bytes - they never learned it,")
+    p("       they only learned how LONG it is)")
+    p(f"      forged tag = {forged_tag.hex()[:32]}...")
+    p()
+    p("D3. The website re-checks with the REAL key, using the real library:")
     server = hashlib.sha256(key + forged_msg).digest()
     ok = hmac.compare_digest(server, forged_tag)
-    p(f"    hashlib.sha256(key + forged_note) = {server.hex()[:32]}...")
-    p(f"    attacker's forged tag             = {forged_tag.hex()[:32]}...")
-    p(f"    do they match - note accepted?  {'YES' if ok else 'no'}")
+    p(f"      hashlib.sha256(key + forged_note) = {server.hex()[:32]}...")
+    p(f"      attacker's forged tag             = {forged_tag.hex()[:32]}...")
+    p(f"      match - note accepted?  {'YES' if ok else 'no'}")
     p()
-    p("Result: a 'guest' just made themselves 'admin', and the note still")
-    p("passes the check - all without knowing the secret key.")
+    p("D4. Look at what actually went on the wire, though. The filler is")
+    p("    copied in literally, so the forged note has raw bytes in the")
+    p("    middle:")
     p()
+    tokens = [chr(b) if 32 <= b < 127 else f"\\x{b:02x}" for b in forged_msg]
+    line = ""
+    for tok in tokens:
+        if len(line) + len(tok) > 58:
+            p(f"      {line}")
+            line = ""
+        line += tok
+    p(f"      {line}")
+    p()
+    p("    An attacker cannot avoid that junk: those exact bytes are what")
+    p("    the hash absorbed, so the tag is only valid WITH them. Whether")
+    p("    the forgery lands therefore depends on the PARSER at the other")
+    p("    end - and plenty of real formats shrug it off: query strings,")
+    p("    cookies and loose serialisers skip what they cannot read, and")
+    p("    when a key appears twice the LAST value usually wins. Here")
+    p("    role=viewer is read first, then role=admin overwrites it.")
+    p()
+    p("    Result: a 'guest' just made themselves 'admin', and the note")
+    p("    still passes the check - without ever knowing the secret key.")
+
+    # ---------------------------------------------------------------- E ---
+    step("E. Why it failed, what else is affected, and the fix")
     p("Why did the key fail to protect the note? It was mixed in only at")
-    p("the START. The published tag already carries everything the key did,")
-    p("so holding the tag is as good as knowing the key - you just continue")
-    p("from there. The fix (next stage, HMAC) mixes the key in at the END")
-    p("too, so the tag can no longer be used to keep hashing.")
+    p("the START. The published tag already carries everything the key")
+    p("did, so holding the tag is as good as holding the key - you just")
+    p("continue from there.")
+    p()
+    p("Which hashes leak their state this way? Every plain Merkle-Damgard")
+    p("one, however strong it is otherwise:")
+    p()
+    diagram("""
+      vulnerable      MD5, SHA-1, SHA-256, SHA-512
+      not vulnerable  SHA-3 / Keccak  - a sponge; its state is far larger
+                                        than the digest, so the digest does
+                                        not hand you the machine
+                      BLAKE2, BLAKE3  - finalisation flag in the last block
+                      SHA-512/256     - truncated: half the state is withheld""")
+    p("SHA-256 is on the vulnerable list, yet stage 2 called it unbroken.")
+    p("Both are true, and the distinction is the point of this stage:")
+    p()
+    p("    collision resistance  no two messages share a digest")
+    p("    state secrecy         the digest does not reveal the machine")
+    p()
+    p("Those are different properties. Length extension is not a flaw in")
+    p("the mixing - it is a consequence of the SHAPE of the construction.")
+    p("A perfect compression function would not help.")
+    p()
+    p("The fix is to stop the tag from being a resumable state. Switching")
+    p("to SHA-3 works; so does sha256(sha256(key + message)), because the")
+    p("attacker only ever sees the OUTER hash's state and cannot resume")
+    p("the inner one.")
+    p()
+    p("But do not invent your own. Use HMAC - the next stage - which")
+    p("mixes the key in at the END as well, and is the construction that")
+    p("has actually been analysed and standardised.")
 
 
 # --- STAGE 5 — HMAC -----------------------------------------------------------
+
+_DIAG_HMAC = r"""
+                 message
+                    |
+   key --^ipad--> [ inner sha256 ] --> inner digest (32 bytes)
+                                            |
+   key --^opad--------------------------> [ outer sha256 ] --> TAG
+
+   The tag is the OUTER hash's state. Resuming it (stage 4's trick)
+   gets you a longer OUTER hash - but the server never continues the
+   outer hash, it recomputes the inner one from the message. The
+   extension lands on the wrong side of the nesting.
+"""
+
+
+def ipad_of(key, block=64):
+    """The inner key: key padded to the block size, XORed with 0x36s."""
+    if len(key) > block:
+        key = hashlib.sha256(key).digest()
+    return bytes(k ^ 0x36 for k in key.ljust(block, b"\x00"))
+
+
+def opad_of(key, block=64):
+    """The outer key: same padding, XORed with 0x5c s instead."""
+    if len(key) > block:
+        key = hashlib.sha256(key).digest()
+    return bytes(k ^ 0x5c for k in key.ljust(block, b"\x00"))
+
 
 def hmac_by_hand(key, message, block=64):
     if len(key) > block:
@@ -448,34 +673,141 @@ def hmac_by_hand(key, message, block=64):
 
 def stage5() -> None:
     head(5, 5, "The fix: HMAC")
-    p("HMAC hashes twice, folding the key in each time:")
-    p("    HMAC(k, m) = sha256( (k^opad) + sha256( (k^ipad) + m ) )")
-    p("The key is applied at the END too (the outer hash), so the tag is")
-    p("NOT a resumable state of the message - Stage 4's trick can't work.")
+    p("Stage 4's break had one cause: the key went in only at the START,")
+    p("so the published tag was a resumable snapshot of the machine.")
     p()
+    p("HMAC's answer is to hash TWICE, folding the key in both times:")
+    p()
+    p("    HMAC(k, m) = sha256( (k^opad) + sha256( (k^ipad) + m ) )")
+    p("                 '------- outer -------'  '---- inner ----'")
+    p()
+    diagram(_DIAG_HMAC)
+
+    step("A. What ipad and opad are")
+    p("Two fixed constants, repeated to the block size, XORed with the")
+    p("key to make TWO different keys out of one:")
+    p()
+    demo_key = b"shared-secret-key"
+    padded = demo_key.ljust(64, b"\x00")
+    ipad = bytes(k ^ 0x36 for k in padded)
+    opad = bytes(k ^ 0x5c for k in padded)
+    p(f"    key                = {demo_key.decode()}")
+    p(f"    padded to 64 bytes = {demo_key.decode()}" + "\\x00 x "
+      f"{64 - len(demo_key)}")
+    p(f"    ipad const = 0x36 repeated -> k^ipad = {ipad[:8].hex()}...")
+    p(f"    opad const = 0x5c repeated -> k^opad = {opad[:8].hex()}...")
+    p()
+    p("    Why two different constants? So the inner and outer hashes are")
+    p("    keyed DIFFERENTLY. If both used the same value the two hashes")
+    p("    would share a key, and the proof of security would not hold.")
+    p("    0x36 and 0x5c differ in 4 of their 8 bits, which is the point;")
+    p("    the specific values are not magic.")
+    p()
+    p("    Two housekeeping rules complete the construction:")
+    p("      - a key LONGER than the block is hashed down to 32 bytes")
+    p("        first (that is why HMAC accepts any key length)")
+    p("      - a key SHORTER than the block is padded with zeros")
+
+    step("B. Check our version against the library")
     key = b"shared-secret-key"
     message = b"user=guest&role=viewer"
     mine = hmac_by_hand(key, message)
     lib = hmac.new(key, message, hashlib.sha256).digest()
-    p("Our by-hand version matches Python's hmac module:")
-    p(f"    by hand    = {mine.hex()[:32]}...")
-    p(f"    hmac module= {lib.hex()[:32]}...")
+    p(f"    our 4-line hmac_by_hand = {mine.hex()[:32]}...")
+    p(f"    python's hmac module    = {lib.hex()[:32]}...")
     p(f"    match?  {'YES' if hmac.compare_digest(mine, lib) else 'no'}")
-    p()
-    p("Now retry the Stage 4 forgery against HMAC:")
+    p("    So the explanation above describes the real thing.")
+
+    step("C. Now re-run stage 4's attack against it")
     tag = hmac.new(key, message, hashlib.sha256).digest()
-    glue = _pad(64 + len(message))
-    forged = sha256_extend(tag, 64 + len(message) + len(glue), b"&role=admin")
-    server = hmac.new(key, message + glue + b"&role=admin",
-                      hashlib.sha256).digest()
+    p(f"    tag = HMAC(key, \"{message.decode()}\")")
+    p(f"        = {tag.hex()[:32]}...")
+    p()
+    p("    The attacker tries exactly what worked before: treat the tag as")
+    p("    a machine state, and pour in more.")
+    p()
+    p("    Here is the subtle part, and it is worth slowing down for.")
+    p("    The tag IS still a resumable state - of the OUTER hash. The")
+    p("    outer hash absorbed (k^opad) plus the 32-byte inner digest:")
+    p()
+    p("        64 + 32 = 96 bytes")
+    p()
+    evil = b"&role=admin"
+    glue = _pad(96)
+    forged = sha256_extend(tag, 96 + len(glue), evil)
+    inner = hashlib.sha256(ipad_of(key) + message).digest()
+    truth = hashlib.sha256(opad_of(key) + inner + glue + evil).digest()
+    p("    so the attacker CAN extend it, and the extension is genuinely")
+    p("    correct as a hash operation:")
+    p()
+    p(f"      extended tag                       = {forged.hex()[:32]}...")
+    p(f"      sha256(k^opad + inner + pad + evil)= {truth.hex()[:32]}...")
+    p(f"      a valid continuation?  "
+      f"{'YES - the resume itself still works' if forged == truth else 'no'}")
+    p()
+    p("    And yet it buys them nothing. Ask the server:")
+    server = hmac.new(key, message + glue + evil, hashlib.sha256).digest()
     ok = hmac.compare_digest(forged, server)
-    p(f"    accepted?  {'yes' if ok else 'NO'}   <- the attack fails")
+    p(f"      HMAC(key, message + pad + evil)    = {server.hex()[:32]}...")
+    p(f"      attacker's extended tag            = {forged.hex()[:32]}...")
+    p(f"      accepted?  {'yes' if ok else 'NO - the attack fails'}")
     p()
-    p("Always compare tags in constant time to avoid timing leaks:")
-    p("    hmac.compare_digest(expected, received)")
+    p("    WHY it fails, precisely: the attacker extended the OUTER hash,")
+    p("    but the server does not verify by continuing anything. It")
+    p("    recomputes from the message - inner hash first, then outer. For")
+    p("    the forgery to work there would have to be some message m' with")
     p()
-    p("HMAC needs a SHARED secret (both sides can make and check tags).")
-    p("Need public verification / non-repudiation? Use a signature (RSA).")
+    p("        sha256(k^ipad + m') = inner + padding + evil")
+    p()
+    p("    i.e. a message whose INNER digest happens to equal the extended")
+    p("    string. That is a preimage attack on SHA-256, and 32 bytes of")
+    p("    output cannot be steered that way.")
+    p()
+    p("    The extension landed on the wrong side of the nesting. That is")
+    p("    what the outer hash is for.")
+
+    step("D. Using it correctly")
+    p("Verification must compare in CONSTANT TIME:")
+    p()
+    p("    hmac.compare_digest(expected, received)     yes")
+    p("    expected == received                        no")
+    p()
+    p("A plain == returns as soon as two bytes differ, so how LONG it")
+    p("takes reveals how many leading bytes were right. An attacker who")
+    p("can time the check recovers a valid tag one byte at a time -")
+    p("roughly 32 x 256 attempts instead of 2^256.")
+    p()
+    p("A correct verifier, in full:")
+    p()
+    diagram("""
+      def verify(key, message, received_tag):
+          expected = hmac.new(key, message, hashlib.sha256).digest()
+          return hmac.compare_digest(expected, received_tag)""")
+    good = hmac.new(key, message, hashlib.sha256).digest()
+    tampered = message.replace(b"viewer", b"admin!")
+    p("    genuine message + its tag   -> "
+      f"{'ACCEPTED' if hmac.compare_digest(hmac.new(key, message, hashlib.sha256).digest(), good) else 'rejected'}")
+    p("    tampered message + old tag  -> "
+      f"{'accepted' if hmac.compare_digest(hmac.new(key, tampered, hashlib.sha256).digest(), good) else 'REJECTED'}")
+    p("    genuine message + bad tag   -> "
+      f"{'accepted' if hmac.compare_digest(good, bytes(32)) else 'REJECTED'}")
+
+    step("E. When HMAC is not the right tool")
+    p("HMAC needs a SHARED secret, which means anyone who can CHECK a tag")
+    p("can also MAKE one. Between two systems that already trust each")
+    p("other, that is fine and HMAC is the right answer: fast, small, and")
+    p("standardised.")
+    p()
+    p("But it cannot prove to a THIRD party who created a message, because")
+    p("either holder of the key could have. For that you need two")
+    p("different keys - sign with a private one, verify with a public one:")
+    p()
+    p("    HMAC        one shared secret     verifier can also forge")
+    p("    signature   private + public      verifier can only verify")
+    p("                                      and gets non-repudiation")
+    p()
+    p("That is a digital signature. See rsa_signatures.py in this folder,")
+    p("which picks up exactly here.")
 
 
 # --- recap + runner -----------------------------------------------------------
@@ -492,6 +824,9 @@ def recap() -> None:
     p("4. Don't build a tag as hash(secret+message) - it's forgeable.")
     p("5. Use HMAC for shared-secret authenticity; signatures for")
     p("   public verification. Compare tags with hmac.compare_digest.")
+    print()
+    p("Next: rsa_signatures.py - the same authenticity problem, solved")
+    p("with two keys instead of one shared secret.")
     print()
 
 
