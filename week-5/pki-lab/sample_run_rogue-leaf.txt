@@ -1,0 +1,40 @@
+
+==============================================================================
+ RUN: variant 'rogue-leaf' -- leaf is signed by another LEAF (CA:FALSE), not by a CA
+==============================================================================
+
+==============================================================================
+ VERIFY: https://localhost:8443  (trust store: pki/root.pem)
+==============================================================================
+  TLS                 : TLSv1.3, TLS_AES_256_GCM_SHA384
+  Chain source        : leaf from handshake; issuers from pki/served/chain.pem
+                        (Python < 3.13)
+  Certs received      : 3: localhost <- good-server.lab <- CS440 Lab
+                        Intermediate CA
+  Trust anchors       : CS440 Lab Root CA
+
+  [PASS] step 1: hostname matches a Subject Alternative Name
+           SAN dNSNames = ['localhost']; looking for 'localhost'. Subject CN is
+           'localhost' but browsers ignore CN entirely.
+  [PASS] step 2: every certificate is inside its validity window
+           all within window
+  [PASS] step 3: chain builds from leaf to a trusted anchor
+           localhost -> good-server.lab -> CS440 Lab Intermediate CA -> CS440
+           Lab Root CA.  CS440 Lab Root CA is a trust anchor
+  [FAIL] step 4: every issuer in the path is marked CA:TRUE + keyCertSign
+           good-server.lab: CA=False, keyCertSign=False; CS440 Lab Intermediate
+           CA: CA=True, keyCertSign=True; CS440 Lab Root CA: CA=True,
+           keyCertSign=True
+  [PASS] step 5: every signature verifies with the parent's public key
+           localhost signed by good-server.lab: valid; good-server.lab signed
+           by CS440 Lab Intermediate CA: valid; CS440 Lab Intermediate CA
+           signed by CS440 Lab Root CA: valid
+  [PASS] step 6: leaf is allowed to act as a TLS server
+           EKU = ['serverAuth']; KU digitalSignature = True; CA = False
+  [PASS] step 7: leaf key meets minimum strength
+           EC secp256r1 (256-bit, minimum 256)
+
+  Manual verdict      : REJECT  (failed step [4])
+  Library verdict     : REJECT  (validation failed: candidates exhausted:
+                        basicConstraints.cA must be a)
+  OpenSSL (Python ssl): REJECT  (invalid CA certificate)

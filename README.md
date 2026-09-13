@@ -68,7 +68,7 @@ there is no `source .venv/bin/activate` step:
 uv run week-2/aes_encryption.py
 ```
 
-Some scripts (weeks 3, 4 and 6) carry their own dependencies in a
+Some scripts (weeks 3, 4, 5 and 6) carry their own dependencies in a
 [PEP 723](https://peps.python.org/pep-0723/) inline metadata header, e.g.:
 
 ```python
@@ -106,7 +106,7 @@ takes a few extra seconds while uv downloads it.
 ├── week-2/                 # classical ciphers, AES block modes
 ├── week-3/                 # RSA
 ├── week-4/                 # hashing, HMAC, length extension, RSA signatures
-├── week-5/                 # certificate transparency OSINT
+├── week-5/                 # PKI lab + certificate transparency OSINT
 ├── week-6/                 # password cracking & password storage
 └── week-7/                 # access control lists (CLI lab) + an RBAC web server
 ```
@@ -183,19 +183,74 @@ uv run week-4/rsa_signatures.py    # same navigation
   and a guest becomes admin — the same "trusted attacker-controlled input"
   bug as week 7's RBAC demo, wearing a cryptographic hat.
 
-### Week 5 — Certificate transparency OSINT
+### Week 5 — PKI & certificate transparency
 
-No Python here — see [`week-5/cert-osint.md`](week-5/cert-osint.md) for the
-Cert Spotter recipe:
+Two halves: build and break a certificate chain yourself, then go looking at
+what real chains leak in public.
 
 ```bash
-export TARGET="smu.edu.sg"
-curl -s "https://api.certspotter.com/v1/issuances?domain=$TARGET&include_subdomains=true&expand=dns_names" > $TARGET.ct.logs
-cat $TARGET.ct.logs | jq -r '.[].dns_names[]' | grep $TARGET | sort -u
+uv run week-5/pki-lab/pki_lab.py init          # build root + intermediate CA
+uv run week-5/pki-lab/pki_lab.py run good      # serve + validate, step by step
+uv run week-5/pki-lab/pki_lab.py run --all     # scoreboard of every variant
+uv run week-5/pki-lab/pki_lab.py variants      # list the sabotage variants
 ```
 
-`smu.edu.sg.ct.logs` and `tech.gov.sg.ct.logs` are captured responses you can
-work through offline (requires `curl` and `jq`).
+**`pki-lab/`** — a three-tier CA hierarchy (root → intermediate → leaf), an
+HTTPS server running on it, and a client that validates the chain in **seven
+explicit steps**: hostname vs SAN, validity windows, path building to a trust
+anchor, CA:TRUE + keyCertSign on every issuer, signatures, leaf EKU, key
+strength. Then **eleven sabotage variants** — expired, wrong name, CN with no
+SAN, missing intermediate, a leaf signed by another *leaf*, self-signed,
+untrusted root, clientAuth-only EKU, RSA-1024, and one byte flipped after
+signing — and for each you predict which step catches it before running it.
+
+Every run prints three verdicts side by side: the seven manual steps, the
+`cryptography` library's verifier, and OpenSSL via Python's `ssl` module.
+Where they *disagree* is the lesson — `cn-only` is accepted by OpenSSL (CN
+fallback) and rejected by the other two; `weak-key` is the reverse; and
+trusting the intermediate instead of the root splits OpenSSL from both. A
+valid certificate is a policy question, not just a maths one.
+
+[`week-5/pki-lab/README.md`](week-5/pki-lab/README.md) is the ~90-minute
+student lab sheet: a conceptual primer on the ideas behind PKI, then each
+activity framed by what it means and why, a prediction table, and an
+instructor answer key. `sample_run_good.txt` and `sample_run_rogue-leaf.txt`
+are captured transcripts. The script writes its keys and certificates to a
+`pki/` directory in whatever directory you run it from; delete it to start over.
+
+**`osint-challenge-with-cert/`** — the other direction: what Certificate
+Transparency tells an attacker about a target that never spoke to them.
+
+```bash
+uv run week-5/osint-challenge-with-cert/ct_osint.py --help
+cd week-5/osint-challenge-with-cert
+uv run ct_osint.py all smu.edu.sg          # steps 1-7 in sequence
+uv run ct_osint.py naming tech.gov.sg      # or one step at a time
+uv run ct_osint.py fetch <your-domain>     # the only command that uses the network
+```
+
+`ct_osint.py` is a standard-library-only CLI — no `jq`, no `curl`, nothing to
+install — with one subcommand per step of the lab: `surface`, `naming`,
+`nonprod`, `shared`, `timeline`, `revoked`, `wildcards`. Each prints an
+explanation of what you are looking at, which `--brief` turns off.
+
+[`osint-challenge-with-cert/README.md`](week-5/osint-challenge-with-cert/README.md)
+is the lab sheet, in two halves: a **guided walkthrough of `smu.edu.sg`** with the answers
+worked through, then the **same eight steps against `tech.gov.sg`** as an open
+challenge with hints only, plus an instructor answer key. `smu.edu.sg.ct.logs`
+and `tech.gov.sg.ct.logs` are captured API responses, so the whole thing runs
+offline.
+
+The findings are real: an environment ladder that lets you guess hosts you never
+saw, a database admin console hidden behind a 31-character random hostname that
+Certificate Transparency published anyway, a university library sharing one
+private key with two dozen unrelated businesses via its WAF vendor, and a
+government platform's tenant onboarding reconstructed date by date from
+certificate reissues.
+
+> **Ethics:** the OSINT half reads a public, append-only log — no packet ever
+> reaches the target, which is exactly what makes CT worth understanding. Acting
+> on what you find against a system you do not own is a different matter.
 
 ### Week 6 — Passwords
 
