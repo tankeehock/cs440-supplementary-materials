@@ -66,6 +66,8 @@ API = "https://api.certspotter.com/v1/issuances"
 
 # Hostnames that hint at a non-production or administrative system. Keyword
 # matching is a first pass, never a verdict -- see the warning in cmd_nonprod.
+EXPAND_LIMIT = 24        # co-tenant names printed per certificate under --expand
+
 NONPROD_KEYWORDS = ["dev", "test", "uat", "qa", "stag", "sandbox", "demo",
                     "beta", "admin", "intranet", "internal", "preview"]
 
@@ -110,10 +112,12 @@ def explain(text: str, brief: bool = False) -> None:
         print()
 
 
-def columns(items: list[str], width: int = WIDTH - 4, gutter: int = 2) -> None:
+def columns(items: list[str], width: int = WIDTH - 4, gutter: int = 2,
+            indent: int = 4) -> None:
     """Print a sorted list in as many aligned columns as will fit."""
+    pad = " " * indent
     if not items:
-        print("    (none)")
+        print(f"{pad}(none)")
         return
     w = max(len(i) for i in items) + gutter
     ncol = max(1, width // w)
@@ -121,7 +125,7 @@ def columns(items: list[str], width: int = WIDTH - 4, gutter: int = 2) -> None:
     for r in range(rows):
         line = "".join(items[r + c * rows].ljust(w)
                        for c in range(ncol) if r + c * rows < len(items))
-        print("    " + line.rstrip())
+        print(pad + line.rstrip())
 
 
 # =============================================================================
@@ -283,7 +287,10 @@ def cmd_surface(args) -> int:
                              f"probably truncated: treat this as a sample, not "
                              f"an inventory.")
     if foreign:
-        top = Counter(registrable(n) for n in foreign).most_common(5)
+        # Sort explicitly: Counter.most_common breaks ties by insertion order,
+        # and `foreign` is a set, so equal counts would shuffle between runs.
+        counts = Counter(registrable(n) for n in foreign)
+        top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
         datablock("Top foreign domains", ", ".join(f"{d} ({c})" for d, c in top))
 
     explain("""
@@ -426,6 +433,17 @@ def cmd_shared(args) -> int:
         seen.add(key)
         print(f"    {len(e['dns_names']):>5}  {e['not_before'][:10]:<12} "
               f"{', '.join(ours) or '(none)'}")
+        # --expand: the co-tenants themselves. The table above only names OUR
+        # hosts on each certificate; the finding is usually WHO ELSE is on it
+        # (a SaaS vendor's other customers, or a CDN's unrelated tenants).
+        if getattr(args, "expand", False):
+            foreign = sorted(set(e["dns_names"]) - set(ours))
+            print(f"          co-tenants ({len(foreign)} foreign name"
+                  f"{'s' if len(foreign) != 1 else ''}):")
+            columns(foreign[:EXPAND_LIMIT], width=WIDTH - 12, indent=12)
+            if len(foreign) > EXPAND_LIMIT:
+                print(f"            ... and {len(foreign) - EXPAND_LIMIT} more")
+            print()
 
     widest = big[-1]
     orgs = sorted({registrable(n) for n in widest["dns_names"]})
@@ -447,6 +465,10 @@ def cmd_shared(args) -> int:
         certificate carries everybody else? The query is identical; the finding
         is the opposite. And note that every organisation on the list has
         disclosed its vendor relationship to all the others, none of whom asked.
+
+        The table names only YOUR hosts on each certificate. Add --expand to
+        list the co-tenants as well -- that is where the vendor is identified
+        -- and lower --min-names to reach the smaller shared certificates.
     """, args.brief)
     return 0
 
@@ -469,7 +491,9 @@ def cmd_timeline(args) -> int:
         # The most-repeated individual HOSTNAME across multi-name certificates
         # anchors the series. Matching on a registrable domain would just pick
         # the target's own domain, which is on every certificate in the file.
-        match = counter.most_common(1)[0][0]
+        # (-count, name) so a tie resolves the same way on every machine and
+        # every run -- `set(...)` iteration order alone would not.
+        match = min(counter.items(), key=lambda kv: (-kv[1], kv[0]))[0]
 
     series = [e for e in entries
               if any(match in n for n in e.get("dns_names", []))]
@@ -669,6 +693,8 @@ def main() -> int:
     p = add("shared", cmd_shared, "step 4: who else is on these certificates")
     p.add_argument("--min-names", type=int, default=10,
                    help="certificates carrying at least this many names (default 10)")
+    p.add_argument("--expand", action="store_true",
+                   help="also list the co-tenant (foreign) names on each certificate")
 
     p = add("timeline", cmd_timeline, "step 5: watch a certificate grow over time")
     p.add_argument("--match", help="substring picking the certificate series "
@@ -681,6 +707,7 @@ def main() -> int:
     p.add_argument("--min-len", type=int, default=20)
     p.add_argument("--min-names", type=int, default=10)
     p.add_argument("--match", default=None)
+    p.add_argument("--expand", action="store_true")
 
     args = ap.parse_args()
     return args.fn(args)

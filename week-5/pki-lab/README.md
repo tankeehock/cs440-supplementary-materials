@@ -707,8 +707,9 @@ that teach something beyond "a field was wrong":
   check that asks that question. Without it, anyone who can buy a $0
   certificate for their own blog could sign a leaf for your bank and every
   other check would pass — which is exactly the browser bug class this was for
-  years (Moxie Marlinspike's 2002/2009 basicConstraints demonstrations, and
-  Apple's 2002 and Microsoft's 2011 implementations that forgot the check).
+  years: Moxie Marlinspike demonstrated it against Internet Explorer in 2002
+  (Microsoft MS02-050), and Apple shipped the same omission in iOS as late as
+  2011 (CVE-2011-0228).
 - **no-intermediate.** The client can repair the chain only if it can get the
   missing certificate from somewhere other than the server: (a) the leaf's
   **Authority Information Access** extension, whose `caIssuers` field is a URL

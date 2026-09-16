@@ -58,6 +58,14 @@ The name-parsing every step shares — `own_names()`, `registrable()`,
 explanation of what you are looking at; add `--brief` to suppress it once you
 know.
 
+Three flags matter beyond `--brief`, all on the steps where a default hides
+something: `shared --expand` lists the *co-tenants* on each certificate (the
+table alone names only your own hosts), `shared --min-names N` lowers the
+threshold from 10 so small shared certificates come into view, and
+`timeline --match <substring>` picks the certificate series by hand instead of
+letting the tool anchor on the busiest hostname. Steps 4 and 5 of both parts
+need them.
+
 ### Under the hood — the raw recipe
 
 The tool is a convenience wrapper. There is no magic in it: it calls one public
@@ -334,6 +342,8 @@ uv run ct_osint.py surface smu.edu.sg
   WARNING               : capture is exactly 100 issuances, a multiple of the
                           API's 100-per-page limit. It was probably truncated:
                           treat this as a sample, not an inventory.
+  Top foreign domains   : byupathway.edu (3), gannon.edu (3), hilbert.edu (3),
+                          smcvt.edu (3), angelina.edu (2)
 ```
 
 Start with the gap between 255 and 96, because it is not a mistake.
@@ -358,7 +368,8 @@ because it is a quirk of *how the query matches*. You asked Cert Spotter for
 `domain=smu.edu.sg&include_subdomains=true`. That matches a **certificate** when
 *any one* of its Subject Alternative Names is in SMU's scope — but the API then
 returns the **entire certificate record, every SAN on it**. Watch it happen on a
-single certificate in this capture:
+single certificate in this capture (this one is drawn straight from
+`smu.edu.sg.ct.logs`, not printed by any subcommand):
 
 ```
 one certificate carries 82 SANs:
@@ -437,19 +448,21 @@ uv run ct_osint.py nonprod smu.edu.sg
 ```
 
 ```
-    *.intranet.smu.edu.sg          <- intranet
-    elearnapps-dev.smu.edu.sg      <- dev
-    elearndev.smu.edu.sg           <- dev
-    elearnuat.smu.edu.sg           <- uat
-    givenow-qa.smu.edu.sg          <- qa
-    intranet.smu.edu.sg            <- intranet
-    isiseddaapi-qa.smu.edu.sg      <- qa
-    pnc-admin.smu.edu.sg           <- admin
-    postgraduate.smu.edu.sg        <- uat
-    postgraduate2.smu.edu.sg       <- uat
-    praasadmin.smu.edu.sg          <- admin
-    smu-api-qa.smu.edu.sg          <- qa
-    x509-sf-tlms-qa.smu.edu.sg     <- qa
+  Hosts matched         : 13 of 96
+
+    *.intranet.smu.edu.sg                                <- intranet
+    elearnapps-dev.smu.edu.sg                            <- dev
+    elearndev.smu.edu.sg                                 <- dev
+    elearnuat.smu.edu.sg                                 <- uat
+    givenow-qa.smu.edu.sg                                <- qa
+    intranet.smu.edu.sg                                  <- intranet
+    isiseddaapi-qa.smu.edu.sg                            <- qa
+    pnc-admin.smu.edu.sg                                 <- admin
+    postgraduate.smu.edu.sg                              <- uat
+    postgraduate2.smu.edu.sg                             <- uat
+    praasadmin.smu.edu.sg                                <- admin
+    smu-api-qa.smu.edu.sg                                <- qa
+    x509-sf-tlms-qa.smu.edu.sg                           <- qa
 ```
 
 Thirteen hits — and **only eleven are real**. Look at the right-hand column,
@@ -468,6 +481,13 @@ find this keyword set **misses** `libproxy.smu.edu.sg` and
 library proxy is an authentication endpoint whose job is holding credentials
 that unlock paid journal subscriptions. Recall and precision are both imperfect.
 The filter finds candidates; the analyst decides.
+
+Worse still, it misses a host you *already saw two commands ago*. The keyword
+list contains `stag`, not `stg` — so `elearnstg.smu.edu.sg`, printed in step 2
+as part of the `elearn` ladder, does not appear in this list at all. Step 2 and
+step 3 disagree about what counts as a staging marker, and step 3 is the one
+that is wrong. Keep this in mind for Part B, where the target spells *every*
+staging tier `stg.` and this step therefore misses the lot.
 
 The eleven real ones: three learning-platform non-prod tiers, four QA APIs
 (`givenow` handles donations), two self-named admin interfaces, and the internal
@@ -492,12 +512,23 @@ uv run ct_osint.py shared smu.edu.sg
     -----  ------       ----------------------------------------
        23  2026-06-23   ink.library.smu.edu.sg, search.library.smu.edu.sg
        82  2025-08-04   ccms.smu.edu.sg
+       86  2025-08-07   ccms.smu.edu.sg
        90  2025-08-14   ccms.smu.edu.sg
        92  2025-08-27   ccms.smu.edu.sg, courses.smu.edu.sg
+       93  2025-08-27   ccms.smu.edu.sg, courses.smu.edu.sg
+       96  2026-04-16   ccms.smu.edu.sg, courses.smu.edu.sg
        99  2025-09-19   ccms.smu.edu.sg, courses.smu.edu.sg
 
   Widest certificate    : 99 names, 83 distinct registrable domains
+  A sample of them      : abac.edu, alfredstate.edu, angelina.edu, astate.edu,
+                          bellarmine.edu, berkeley.edu, buf.edu,
+                          byupathway.edu, calbaptist.edu, callutheran.edu,
+                          carolinau.edu, cccc.edu ...
 ```
+
+Note what that table does **not** show: the other organisations. The `names`
+column counts them, and `A sample of them` lists the widest certificate's, but
+the co-tenants of any *particular* certificate need `--expand`.
 
 **Two different mechanisms here, and the difference is the lesson.**
 
@@ -512,13 +543,31 @@ now attack Coursedog instead. SMU's perimeter, WAF and security team are
 irrelevant to that path. Note the direction: **SMU is the tenant, the customer of
 a platform.** Part B's target sits on the other side of exactly this arrangement.
 
-**The 23-name certificate is something else entirely.** Run it and look:
+**The 23-name certificate is something else entirely.** Expand it and look —
+`--min-names 20` keeps the output to the certificates worth reading:
+
+```bash
+uv run ct_osint.py shared smu.edu.sg --expand --min-names 20
+```
 
 ```
-  *.tcorp.nsw.gov.au        imperva.com               ink.library.smu.edu.sg
-  *.enel.com                giapps.zurich.com.hk      search.library.smu.edu.sg
-  dprs.saputo.com           yatzran3.tnuva.co.il      ... and an adult-content site
+       23  2026-06-23   ink.library.smu.edu.sg, search.library.smu.edu.sg
+          co-tenants (21 foreign names):
+            *.agcompany.net                  sirp.pt
+            *.au.viewcases.com               sis.pt
+            *.enel.com                       uniteddisposalassistant.com
+            *.sirp.pt                        www.custody-divorce.com
+            *.tcorp.nsw.gov.au               www.denvermusicinstitute.com
+            custody-divorce.com              www.[adult-content site]
+            denvermusicinstitute.com         www.rsn2000.org
+            dprs.saputo.com                  www.sis.pt
+            giapps.zurich.com.hk             www.uniteddisposalassistant.com
+            imperva.com                      yatzran3.tnuva.co.il
+            [adult-content site]
 ```
+
+*(Two entries are redacted above for the slide deck; your terminal prints the
+actual domain. It is a real co-tenant and it matters — see below.)*
 
 An Australian state treasury corporation, Zurich Insurance Hong Kong, an Italian
 energy utility, a Canadian dairy, an Israeli food company, a divorce law firm, a
@@ -544,6 +593,8 @@ uv run ct_osint.py timeline smu.edu.sg --match coursedog
 ```
 
 ```
+  Series length         : 9 issuances
+
     issued       names   growth
     ------       -----   ------
     2025-08-04      82        ####################################
@@ -552,8 +603,15 @@ uv run ct_osint.py timeline smu.edu.sg --match coursedog
     2025-08-27      92   +2   #########################################
     2025-08-27      93   +1   #########################################
     2025-09-19      99   +6   ############################################
-    2026-04-16      96   -3   ##########################################
+    2025-09-19      99   =    ############################################
+    2025-09-19      99   =    ############################################
+    2026-04-16      96   -3   ###########################################
 ```
+
+(The three rows on 2025-09-19 are three separate issuances of the same 99-name
+certificate on one day — a reissue that adds nothing, marked `=`. Vendors
+re-cut certificates for reasons unrelated to onboarding: a key rotation, a CA
+change, a failed deploy retried. Growth is the signal; `=` is not.)
 
 Eighty-two names in early August, ninety-nine six weeks later. **You are watching
 a SaaS vendor onboard customers, one reissue at a time**, and each reissue dates
@@ -583,8 +641,8 @@ uv run ct_osint.py revoked smu.edu.sg
     2026-03-11   610e4c64f97f4e78   elearnapps-dev.smu.edu.sg
     2026-05-14   df212c80917cfef0   smucar.smu.edu.sg
 
-  Same-day cluster      : 2025-11-26: isiseddaapi.smu.edu.sg;
-                          isiseddaapi-qa.smu.edu.sg
+  Same-day cluster      : 2025-11-26: isiseddaapi.smu.edu.sg; isiseddaapi-
+                          qa.smu.edu.sg
 ```
 
 Five revocations, and the tool flags the interesting one: production and QA of
@@ -674,18 +732,19 @@ were quietly relying on not being named.
 
 ### What Part A established
 
-Eight commands, no packets sent to SMU: 96 hostnames, the environment-naming
-rule, eleven non-production and admin systems, two third-party vendors and the
-83 other institutions co-tenanted with one of them, a dated onboarding timeline,
-and five incidents with dates. Now do it yourself.
+Seven commands and a written recommendation, no packets sent to SMU: 96
+hostnames, the environment-naming rule, eleven non-production and admin systems,
+two third-party vendors and the 83 other institutions co-tenanted with one of
+them, a dated onboarding timeline, and five incidents with dates. Now do it
+yourself.
 
 ---
 
 # Part B — Open challenge: `tech.gov.sg`
 
-Same eight commands, same order, no answers. GovTech is a different kind of
-organisation from a university and the findings differ in kind, not just in
-detail — at least one step has an answer that is the **opposite** of SMU's, and
+Same seven commands and the same written step 8, same order, no answers.
+GovTech is a different kind of organisation from a university and the findings
+differ in kind, not just in detail — at least one step has an answer that is the **opposite** of SMU's, and
 one has an answer that is *nothing at all*. Both are results worth writing down.
 
 Work in pairs. Produce a short written finding for each step.
@@ -716,19 +775,23 @@ and did anyone try to hide?
 > `adminer`, `temporal-ui`, `databricks`, `gcsoc`. Check the right-hand keyword
 > column for false positives as you go.
 
-**Step 4 — `shared`.** Who else is on GovTech's certificates?
+**Step 4 — `shared --expand`.** Who else is on GovTech's certificates?
 > *Hint:* this is where GovTech is the **mirror image** of SMU. In Part A, SMU
 > was one small tenant on a vendor's certificate. Here — which organisations are
-> these, and who is hosting whom? One name in the list is **not a government
-> domain at all**; flag it and say what you would ask about it rather than
-> guessing what it is.
+> these, and who is hosting whom? Then drop the threshold and expand the small
+> certificates too (`shared tech.gov.sg --expand --min-names 4`): one co-tenant
+> down there is **not a government domain at all**. Flag it and say what you
+> would ask about it rather than guessing what it is.
 
-**Step 5 — `timeline --match airbase`.** Same growth analysis.
+**Step 5 — `timeline`.** Same growth analysis.
 > *Hint:* the series runs from single digits to the high twenties over about two
 > months. Read it as a story: say what event each jump represents and name three
 > organisations with the date they appear. This is the strongest finding in the
-> GovTech set. (Running `timeline` with no `--match` auto-picks a series; the
-> `airbase` anchor gives the fullest view.)
+> GovTech set. (With no `--match`, the tool anchors on the busiest hostname,
+> which here is the right one: `on.tc2.airbase.tech.gov.sg`. Passing
+> `--match airbase` instead sweeps in four unrelated small certificates that
+> merely share the string, so the chart dips — a good illustration of why a
+> substring is not a series.)
 
 **Step 6 — `revoked`.** The answer is **zero**.
 > *Hint:* interpret it, don't report it as nothing. Give two competing
@@ -762,19 +825,24 @@ tenant on a huge vendor certificate; GovTech's 32 foreign names are other
 *government bodies* on certificates GovTech itself operates. Same query,
 inverted relationship.
 
-**Step 2.** The ladders are deeper and more revealing than SMU's:
+**Step 2.** Eleven families come back — deeper and more revealing than SMU's
+five:
 
 ```
-  butler              : butler, dev.butler, stg.butler
-  temporal-ui.butler  : temporal-ui.butler, temporal-ui.dev.butler,
-                        temporal-ui.stg.butler
-  developer           : developer, preview.developer, dev.preview.developer,
-                        stg.preview.developer
-  v2.developer        : v2.developer, dev.v2.developer, stg.v2.developer
-  thunderbird         : thunderbird, sandbox.thunderbird, uat.thunderbird
-  obmgr.gcsoc         : obmgr.gcsoc, stg.obmgr.gcsoc
-  self-service.gcsoc  : self-service.gcsoc, stg.self-service.gcsoc
-  automation.deep     : automation-stg.deep, automation.stg.deep
+  automation.deep       : automation-stg.deep, automation.stg.deep
+  butler                : butler, dev.butler, stg.butler
+  bvat                  : bvat, bvat-sandbox
+  developer             : dev.preview.developer, developer, preview.developer,
+                          stg.preview.developer
+  obmgr.gcsoc           : obmgr.gcsoc, stg.obmgr.gcsoc
+  self-service.gcsoc    : self-service.gcsoc, stg.self-service.gcsoc
+  sfa.in                : sfa.in, sfauat.in
+  temporal-ui.butler    : temporal-ui.butler, temporal-ui.dev.butler,
+                          temporal-ui.stg.butler
+  thunderbird           : sandbox.thunderbird, thunderbird, uat.thunderbird
+  v2.developer          : dev.v2.developer, stg.v2.developer, v2.developer
+  www.thedigitalacademy : www.beta.thedigitalacademy,
+                          www.stg.thedigitalacademy, www.thedigitalacademy
 ```
 
 Two observations beyond SMU's. First, several of these exist in **production**,
@@ -783,6 +851,13 @@ so the workflow console is exposed in prod too. Second, `automation-stg.deep`
 alongside `automation.stg.deep` shows **two different conventions for the same
 thing**, which means the ladder is not centrally governed — useful for guessing
 names, and a small governance finding in its own right.
+
+Note also what step 3 will fail to do with these. Every staging tier here is
+spelled `stg.`, and `stg` is not in that step's keyword list, so `stg.butler`,
+`temporal-ui.stg.butler`, `stg.obmgr.gcsoc` and the rest never appear in step
+3's output — eight of the ten `stg.` hosts are invisible to it. A student who
+treats step 3's list as the non-production inventory has under-counted badly,
+and step 2 is where the evidence was.
 
 The probe returns three:
 
@@ -838,21 +913,40 @@ certificates: `moe.gov.sg`, `msf.gov.sg`, `mnd.gov.sg`, `parliament.gov.sg`,
 `infrastructureasia.org`, plus `optical.gov.sg` and `oa.gov.sg`. Mostly as
 `www.beta.*` and `www.stg.*`, so each ministry's **staging** hostnames come free.
 
-The odd one out is **`frozenclouds.net`** / `staging.frozenclouds.net` — not a
-government domain, sharing a certificate (and therefore a private key) with
+The odd one out does not appear at the default threshold — it is on a
+**five-name** certificate, so it takes both flags to see:
+
+```bash
+uv run ct_osint.py shared tech.gov.sg --expand --min-names 4
+```
+
+```
+        5  2025-09-09   on.tc2.airbase.tech.gov.sg
+          co-tenants (4 foreign names):
+            frozenclouds.net
+            mofbudget.staging.optical.gov.sg
+            staging.frozenclouds.net
+            starter.staging.optical.gov.sg
+```
+
+**`frozenclouds.net`** / `staging.frozenclouds.net` — not a government domain,
+sharing a certificate (and therefore a private key) with
 `on.tc2.airbase.tech.gov.sg` and `mofbudget.staging.optical.gov.sg` (Ministry of
-Finance budget, staging). Good answers flag it and propose the *question* rather
+Finance budget, staging). Worth saying out loud that the *default* step 4 view
+hides this: big shared certificates are easy to spot, and the interesting
+tenancy was on a small one. Good answers flag it and propose the *question* rather
 than a conclusion: a developer's personal domain onboarded to a government
 platform, a test tenant never removed, or a legitimate contractor? Whichever it
 is, it shares a key with an MOF staging host and somebody should be able to say
 which. That is a high-value finding stated at the correct confidence.
 
-**Step 5.** The `airbase` series:
+**Step 5.** `uv run ct_osint.py timeline tech.gov.sg` — 16 issuances, anchored
+on `on.tc2.airbase.tech.gov.sg`:
 
 ```
 2025-09-09    1        2025-10-11   13
-2025-09-09    4        2025-10-11   15
-2025-09-09    5        2025-10-14   17
+2025-09-09    5        2025-10-11   15
+2025-09-09    4        2025-10-14   17
 2025-09-12    6        2025-10-24   21
 2025-10-01    7        2025-11-03   22
 2025-10-07    9        2025-11-05   24
