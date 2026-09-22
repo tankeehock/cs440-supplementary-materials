@@ -79,7 +79,7 @@ Some scripts (weeks 3, 4, 5 and 6) carry their own dependencies in a
 ```
 
 For those, `uv run` builds a throwaway isolated environment on the fly and
-installs what the header asks for. That means `week-6/password-systems.py`
+installs what the header asks for. That means `week-6/simple-password-auth/password-systems.py`
 works even though `argon2-cffi` is not in `pyproject.toml` — the first run just
 takes a few extra seconds while uv downloads it.
 
@@ -255,26 +255,64 @@ certificate reissues.
 ### Week 6 — Passwords
 
 ```bash
-uv run week-6/password-cracking.py             # the full guided lesson
-uv run week-6/password-cracking.py --try abcd  # brute-force a short password you pick
+uv run week-6/cracking/password-cracking.py             # the full guided lesson
+uv run week-6/cracking/password-cracking.py --try abcd  # brute-force a password you pick
 
-uv run week-6/password-systems.py              # interactive register / login / view store
-uv run week-6/password-systems.py --demo       # scripted narrated walkthrough
-uv run week-6/password-systems.py --brief      # same, explanations off
+uv run week-6/simple-password-auth/password-systems.py          # interactive console
+uv run week-6/simple-password-auth/password-systems.py --demo   # narrated walkthrough
+uv run week-6/simple-password-auth/password-systems.py --brief  # same, explanations off
+
+uv run week-6/password-system-challenge/app.py                  # review target, :8000
+uv run week-6/password-system-challenge/app.py --seed-only      # its seeded accounts
 ```
 
-- **`password-cracking.py`** — the search-space arithmetic made concrete: how
-  big the space is, a real brute-force against a fast hash, why real passwords
-  are not random (dictionary attack), and the defence — shrinking the
-  attacker's rate with a slow hash.
-- **`password-systems.py`** — a transparent password store following the OWASP
-  Password Storage Cheat Sheet (**Argon2id**, m=19 MiB, t=2, p=1, 16-byte
-  CSPRNG salt). It prints the salt, the derived hash, the exact stored record,
-  and the parameters reloaded at login.
+[`week-6/README.md`](week-6/README.md) is the index: the shared threat model,
+the running order, and what students should be able to do afterwards. Two
+halves, attack then defence.
+
+**`cracking/`** — the search-space arithmetic made concrete: how big the space
+is, a real brute-force against a fast hash, why real passwords are not random
+(dictionary and targeted attacks), and the defence — shrinking the attacker's
+rate with a slow hash. `--try` lets a student brute-force a password they pick
+themselves and watch the cliff between four characters and twelve.
+[`week-6/cracking/README.md`](week-6/cracking/README.md) is the lab sheet:
+objective, the five ideas, a code map, a prediction table and an instructor
+answer key.
+
+**`simple-password-auth/`** — a transparent password store following the OWASP
+Password Storage Cheat Sheet (**Argon2id**, m=19 MiB, t=2, p=1, 16-byte CSPRNG
+salt, constant-time compare). It prints the salt, the derived hash, the exact
+stored record, and the parameters reloaded at login. The demo registers two
+users with the *same* password to show the salt at work, then leaks the store
+and attacks it — a correctly-stored `password123` still falls in five guesses,
+which is the point: storage is one of two levers, not both.
+[`week-6/simple-password-auth/README.md`](week-6/simple-password-auth/README.md)
+is the lab sheet, including what the script deliberately leaves out (pepper,
+rate limiting, username-enumeration hardening, re-hash on login).
+
+**`password-system-challenge/`** — the assessment, and the third role: not the
+attacker, not the defender, but the **reviewer**. "SecureVault" is a small Flask
+staff portal — register, sign in, change password, recover a forgotten one —
+submitted for review with **thirteen planted findings**. Passwords are hashed with
+unsalted MD5, the plaintext is written to an application log that is served to
+anonymous visitors, and the reset flow is broken four separate ways: the token
+is derived from the username and the clock, printed straight into the HTTP
+response, never expired or consumed, and never bound to the account it was
+issued for. Two of those chain into unauthenticated administrator takeover in
+two requests, and a forgeable session cookie gets there in one.
+
+[`week-6/password-system-challenge/README.md`](week-6/password-system-challenge/README.md)
+is the challenge sheet: a review method (five passes over unfamiliar code), the
+brief, a findings-report template, three tiers of hints behind `<details>`, then
+the full answer key — every finding with its CWE class, a verified proof-of-
+concept, and the corrected code — plus how the findings chain and a marking
+guide.
 
 > **Ethics:** `password-cracking.py` only cracks hashes it generates itself, for
-> teaching. Cracking passwords, accounts or systems you do not own is illegal.
-> The lesson is defensive.
+> teaching. `password-system-challenge/app.py` is vulnerable by design, runs on
+> localhost only, and every account in it is fictional — a teaching target, never
+> a pattern to copy. Cracking passwords, accounts or systems you do not own is
+> illegal. The lesson is defensive.
 
 ### Week 7 — Access control & RBAC
 

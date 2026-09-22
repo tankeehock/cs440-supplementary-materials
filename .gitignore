@@ -4,3 +4,4 @@ uv.lock
 .claude
 pki/
 __pycache__/
+app.log
