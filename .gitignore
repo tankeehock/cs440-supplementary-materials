@@ -5,3 +5,4 @@ uv.lock
 pki/
 __pycache__/
 app.log
+tls/

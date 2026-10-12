@@ -1,0 +1,104 @@
+
+==============================================================================
+ ACTIVITY 4: HANDSHAKE -- variant 'mitm-stolen-cert'
+==============================================================================
+  scenario                : impersonator: sends the REAL server certificate,
+                            signs with its own key
+  client trusts           : CS440 TLS Lab Root CA
+
+--- FLIGHT 1  ClientHello  (plaintext) ---------------------------------------
+  our X25519 private key  : 3058bd079727fdadccc42111e62d018e47b693e89aff07d93d
+                            7f9d674621975f  (never sent)
+  our X25519 public key   : cfd846ba986121a9e75ee51c060d02056cf0fa6d9e22b29039
+                            c62f92b414bb49  (key_share)
+  cipher suites offered   : TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384,
+                            TLS_CHACHA20_POLY1305_SHA256
+  SNI                     : localhost  (visible to anyone on the path)
+
+  [client ──▶ server]  ClientHello  (175 bytes on the wire)
+           16030300aa010000a603038c...b414bb49 (175 bytes)
+
+--- FLIGHT 2a  ServerHello  (plaintext) --------------------------------------
+
+  [client ◀── server]  ServerHello  (127 bytes on the wire)
+  selected version        : 0x0304  (record header still says 0x0303)
+  selected suite          : TLS_AES_128_GCM_SHA256
+  server key_share        : x25519: f4379f2f5f915cd0e58b4378668f53dd621f27004a
+                            e053934440af35ca1d7658
+  server random           : 8a0b111f4e92d3e3058b0ea52f54f1f8990e8575a2e020fe5e
+                            7101a7313892ca
+  [PASS] CHECK 1: ServerHello picked something we offered
+           TLS 1.3, TLS_AES_128_GCM_SHA256, x25519.
+
+--- Key exchange: X25519 -----------------------------------------------------
+  shared secret           : fc9d392fafcb1287ab1afacd5f665e585b753a334f43cca4b6
+                            abf6180f084c28
+  our private key x server's public key. The server computed the same 32 bytes
+  from its private key and our public key. Nobody watching the wire can: they
+  saw both public keys and neither private key. Both private keys are thrown
+  away after this handshake, so stealing the server's long-term key next year
+  still cannot recover this secret -- forward secrecy.
+
+
+--- KEY SCHEDULE (RFC 8446 7.1) -- every secret, from one shared secret ------
+  early secret            : 33ad0a1c607ec03b09e6cd9893680ce210adf300aa1f2660e1
+                            b22e10f170f92a
+  handshake secret        : 8e48a786a27aca72799954db049b00536f9a6ac95125ce8151
+                            b403dc2e904bd5
+  master secret           : 266ffc992851d98b72e5a813f1058e740b6f49b334ae3e2c8e
+                            33656f49d20b6e
+  transcript hash CH..SH  : 2515b9067bb6d6327a8c57f1a3bdfec35a47cf54383e26ecd3
+                            f3f78a430e484f
+  client hs traffic secret: 2c9ed7bf1f0b62f187f25895fd43d39a89f2ed26b770494db8
+                            b87344e284199c
+  server hs traffic secret: cf6bb658dbb9fc102741d956e16b83eb41325e0e783a1a2ad7
+                            7b01175f33a023
+  server hs write key     : f38945033f4eb5aaa5cec25d8ff6cb31
+  server hs write IV      : 4da780b2bfd0d832c263fd33
+
+--- FLIGHT 2b  the rest of the server flight  (encrypted) --------------------
+
+  [client ◀── server]  record type 23 'application_data'  (28 bytes on the wire)
+           decrypted -> real type 22 'handshake', 6 bytes
+
+  [client ◀── server]  record type 23 'application_data'  (538 bytes on the wire)
+           decrypted -> real type 22 'handshake', 516 bytes
+
+  [client ◀── server]  record type 23 'application_data'  (101 bytes on the wire)
+           decrypted -> real type 22 'handshake', 79 bytes
+
+  [client ◀── server]  record type 23 'application_data'  (58 bytes on the wire)
+           decrypted -> real type 22 'handshake', 36 bytes
+  [PASS] CHECK 2: every encrypted record decrypts (AEAD tag)
+           4 record(s) authenticated with the server handshake key.
+
+  >> EncryptedExtensions (6 bytes)
+  extensions              : (none)
+  Everything the server says beyond the bare key exchange is now encrypted:
+  ALPN, the certificate, the signature. In TLS 1.2 the certificate went in
+  clear -- an observer learned which site you were talking to from it.
+
+
+  >> Certificate (516 bytes)
+  certificates sent       : 1
+  leaf subject            : CN=localhost,O=CS440 TLS Lab
+  leaf issuer             : CN=CS440 TLS Lab Root CA,O=CS440 TLS Lab
+  [PASS] CHECK 3: certificate chains to a trusted root, for this host
+           chains to 'CS440 TLS Lab Root CA', which is in our trust store; SAN
+           covers localhost.
+
+  >> CertificateVerify (79 bytes)
+  signature scheme        : ecdsa_secp256r1_sha256
+  signed content          : 64 spaces | 'TLS 1.3, server CertificateVerify' |
+                            0x00 | 9fe48067caae89561ea54003...685af186 (32
+                            bytes)
+  signature               : 3045022100b65b769ba38543...7ee85adf (71 bytes)
+  [FAIL] CHECK 4: CertificateVerify proves the server holds the cert's key
+           signature does not verify under the certificate's public key
+           (InvalidSignature): whoever sent this does not hold the
+           certificate's private key
+
+  >>> client aborts the connection. Nothing was sent to the 'server'.
+
+--- Outcome ------------------------------------------------------------------
+  Handshake refused -- the attacker learned nothing and our request was never sent.

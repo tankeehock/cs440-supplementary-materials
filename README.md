@@ -108,7 +108,8 @@ takes a few extra seconds while uv downloads it.
 ├── week-4/                 # hashing, HMAC, length extension, RSA signatures
 ├── week-5/                 # PKI lab + certificate transparency OSINT
 ├── week-6/                 # password cracking & password storage
-└── week-7/                 # access control lists (CLI lab) + an RBAC web server
+├── week-7/                 # access control lists (CLI lab) + an RBAC web server
+└── week-9/                 # TLS 1.3 handshake by hand, key logs, MITM variants
 ```
 
 ---
@@ -377,6 +378,49 @@ See [`week-7/rbac-demo/README.md`](week-7/rbac-demo/README.md).
 > **Ethics:** `rbac-demo` is vulnerable by design, on purpose, for teaching. The
 > techniques transfer; the permission does not. Use them only on systems you own
 > or have written authorisation to test.
+
+### Week 9 — TLS
+
+```bash
+cd week-9/tls-lab
+uv run tls_lab.py libraries              # which library runs which primitive
+uv run tls_lab.py handshake              # hand-written TLS 1.3 client vs OpenSSL
+uv run tls_lab.py keylog                 # decrypt OpenSSL<->OpenSSL with a key log
+uv run tls_lab.py handshake --all        # scoreboard of seven attacker variants
+```
+
+**`tls-lab/`** — a TLS 1.3 client written by hand in Python. It builds the
+ClientHello byte by byte, does X25519, walks the RFC 8446 key schedule
+(every secret printed), decrypts the server's flight and makes **five
+checks**: negotiated parameters, AEAD integrity, the certificate chain,
+CertificateVerify, and Finished. It completes a real handshake with
+**OpenSSL**: the server is Python's `ssl` module. Client and server pass bytes
+through memory buffers, so nothing touches the network and every byte goes
+through code you can read.
+
+`libraries` shows that the process holds two different OpenSSLs (`ssl`'s and
+the copy bundled inside `cryptography`). It maps each primitive to the code
+that runs it and benchmarks AES-GCM against ChaCha20. `keylog` captures an
+OpenSSL-to-OpenSSL session plus the `SSLKEYLOGFILE`-style key log, then
+decrypts it with the lab's own key schedule. This proves the hand-written HKDF
+matches OpenSSL bit for bit, and that the server's private key could not have
+done it.
+
+Seven attacker variants, in two kinds: an on-path tamperer (flip a ciphertext
+bit, swap the server's key share, strip cipher suites from the ClientHello) and
+an impersonator running its own TLS server (a stolen certificate, its own CA,
+a skipped CertificateVerify, and a CA the client has been made to trust). Five
+are refused, each at a different check. Two succeed: a client with no
+message-order check (SKIP-TLS) and a client that trusts the attacker's root
+(corporate TLS inspection).
+
+[`week-9/tls-lab/README.md`](week-9/tls-lab/README.md) is the student lab
+sheet: the TLS library landscape and where TLS has historically broken, a
+flight-by-flight walkthrough with questions, a prediction table for the
+attacks, optional `openssl s_client` / Wireshark / post-quantum
+(`X25519MLKEM768`) extensions, and an instructor answer key.
+`sample_run_honest.txt` and `sample_run_mitm-stolen-cert.txt` are captured
+transcripts.
 
 ---
 

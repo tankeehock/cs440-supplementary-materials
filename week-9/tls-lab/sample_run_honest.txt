@@ -1,0 +1,126 @@
+
+==============================================================================
+ ACTIVITY 2: HANDSHAKE -- variant 'honest'
+==============================================================================
+  scenario                : no attacker -- our client vs the real OpenSSL
+                            server
+  client trusts           : CS440 TLS Lab Root CA
+
+--- FLIGHT 1  ClientHello  (plaintext) ---------------------------------------
+  our X25519 private key  : 58a3d955f0d0b64ce256963e674a61f84653b60c82b7501e9b
+                            a0c535a4633c6a  (never sent)
+  our X25519 public key   : 57d7bb8d23dc5ffc93bff906118a049240b106fa2d85a6e63f
+                            3d2ee3fc29f869  (key_share)
+  cipher suites offered   : TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384,
+                            TLS_CHACHA20_POLY1305_SHA256
+  SNI                     : localhost  (visible to anyone on the path)
+
+  [client ──▶ server]  ClientHello  (175 bytes on the wire)
+           16030300aa010000a603035e...fc29f869 (175 bytes)
+
+--- FLIGHT 2a  ServerHello  (plaintext) --------------------------------------
+
+  [client ◀── server]  ServerHello  (127 bytes on the wire)
+  selected version        : 0x0304  (record header still says 0x0303)
+  selected suite          : TLS_AES_256_GCM_SHA384
+  server key_share        : x25519: 84f0004a6717b3f535a51f8c8c835f9a08cf2493fb
+                            1428b8b9bb9cfe74b87c29
+  server random           : 4289a959dd19cf295a2c66dc57c850e229057806b3c435e064
+                            85a1e0045069c9
+  [PASS] CHECK 1: ServerHello picked something we offered
+           TLS 1.3, TLS_AES_256_GCM_SHA384, x25519.
+
+--- Key exchange: X25519 -----------------------------------------------------
+  shared secret           : 61e3675c150ff9fea4e597d1bba450ee5631e375e0dcaa26b8
+                            2b2a7344a00148
+  our private key x server's public key. The server computed the same 32 bytes
+  from its private key and our public key. Nobody watching the wire can: they
+  saw both public keys and neither private key. Both private keys are thrown
+  away after this handshake, so stealing the server's long-term key next year
+  still cannot recover this secret -- forward secrecy.
+
+
+--- KEY SCHEDULE (RFC 8446 7.1) -- every secret, from one shared secret ------
+  early secret            : 7ee8206f5570023e6dc7519e...ec4ea9b5 (48 bytes)
+  handshake secret        : 7e283499badc784ac9a57ea2...3ba12d92 (48 bytes)
+  master secret           : 2dbc056a5700e616533e568f...14f06863 (48 bytes)
+  transcript hash CH..SH  : 17007836edc2a1f8675b7a0c...fb8ba802 (48 bytes)
+  client hs traffic secret: f269b5a283e155fe765b1093...54de308b (48 bytes)
+  server hs traffic secret: bc90bc18d09b490ddab95a8d...e17019c3 (48 bytes)
+  server hs write key     : 2bb8e34a8743b4e3f95336f1d799c694ca390a90c15a240802
+                            f3c26b45fd8c96
+  server hs write IV      : 659f4672ec83456750457c6b
+
+--- FLIGHT 2b  the rest of the server flight  (encrypted) --------------------
+
+  [client ◀── server]  ChangeCipherSpec  (dummy, middlebox compatibility; ignored)  (6 bytes on the wire)
+
+  [client ◀── server]  record type 23 'application_data'  (28 bytes on the wire)
+           decrypted -> real type 22 'handshake', 6 bytes
+
+  [client ◀── server]  record type 23 'application_data'  (538 bytes on the wire)
+           decrypted -> real type 22 'handshake', 516 bytes
+
+  [client ◀── server]  record type 23 'application_data'  (101 bytes on the wire)
+           decrypted -> real type 22 'handshake', 79 bytes
+
+  [client ◀── server]  record type 23 'application_data'  (74 bytes on the wire)
+           decrypted -> real type 22 'handshake', 52 bytes
+  [PASS] CHECK 2: every encrypted record decrypts (AEAD tag)
+           4 record(s) authenticated with the server handshake key.
+
+  >> EncryptedExtensions (6 bytes)
+  extensions              : (none)
+  Everything the server says beyond the bare key exchange is now encrypted:
+  ALPN, the certificate, the signature. In TLS 1.2 the certificate went in
+  clear -- an observer learned which site you were talking to from it.
+
+
+  >> Certificate (516 bytes)
+  certificates sent       : 1
+  leaf subject            : CN=localhost,O=CS440 TLS Lab
+  leaf issuer             : CN=CS440 TLS Lab Root CA,O=CS440 TLS Lab
+  [PASS] CHECK 3: certificate chains to a trusted root, for this host
+           chains to 'CS440 TLS Lab Root CA', which is in our trust store; SAN
+           covers localhost.
+
+  >> CertificateVerify (79 bytes)
+  signature scheme        : ecdsa_secp256r1_sha256
+  signed content          : 64 spaces | 'TLS 1.3, server CertificateVerify' |
+                            0x00 | 04db2ce4423be6b7464a02bd...6656b494 (48
+                            bytes)
+  signature               : 3045022071a9e0b84f2bac86...b15405f8 (71 bytes)
+  [PASS] CHECK 4: CertificateVerify proves the server holds the cert's key
+           signature over the transcript verifies with the leaf's public key.
+
+  >> Finished (52 bytes)
+  verify_data received    : 2f286334751c9199b10f93fb...cdb998a0 (48 bytes)
+  verify_data expected    : 2f286334751c9199b10f93fb...cdb998a0 (48 bytes)
+  [PASS] CHECK 5: server Finished MAC matches our transcript
+           the server saw the same handshake we did.
+
+--- Application keys ---------------------------------------------------------
+  transcript hash CH..sFin: 16f983c6b964842f414d03f6...8d8a33ac (48 bytes)
+  client ap traffic secret: bd2bcb146b7fb21ecde22ec4...a9242254 (48 bytes)
+  server ap traffic secret: 4ce086856fb4d10606226d69...7403457c (48 bytes)
+
+--- FLIGHT 3  client Finished + HTTP request  (encrypted) --------------------
+
+  [client ──▶ server]  Finished (under client handshake key)  (74 bytes on the wire)
+
+  [client ──▶ server]  HTTP request (under client application key)  (82 bytes on the wire)
+           plaintext : b'GET / HTTP/1.1\r\nHost: localhost\r\nCookie: session=hunter2\r\n\r\n'
+           on the wire: 170303004d81e0ed68f4c44b...b5a3a1aa (82 bytes)
+
+--- FLIGHT 4  server -> client  (encrypted under server application key) -----
+
+  [client ◀── server]  NewSessionTicket (for resuming later without a full handshake)  (255 bytes on the wire)
+
+  [client ◀── server]  NewSessionTicket (for resuming later without a full handshake)  (255 bytes on the wire)
+
+  [client ◀── server]  HTTP response  (80 bytes on the wire)
+           plaintext : b'HTTP/1.1 200 OK\r\nContent-Length: 19\r\n\r\nhello from OpenSSL\n'
+
+
+--- Outcome ------------------------------------------------------------------
+  Secure connection. Request sent and response received.
