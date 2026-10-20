@@ -109,7 +109,9 @@ takes a few extra seconds while uv downloads it.
 ├── week-5/                 # PKI lab + certificate transparency OSINT
 ├── week-6/                 # password cracking & password storage
 ├── week-7/                 # access control lists (CLI lab) + an RBAC web server
-└── week-9/                 # TLS 1.3 handshake by hand, key logs, MITM variants
+├── week-9/                 # TLS 1.3 handshake by hand, key logs, MITM variants
+├── week-10/                # binary exploitation challenges, container-only
+└── week-11/                # cross-site scripting: reflected, stored, DOM-based
 ```
 
 ---
@@ -421,6 +423,33 @@ attacks, optional `openssl s_client` / Wireshark / post-quantum
 (`X25519MLKEM768`) extensions, and an instructor answer key.
 `sample_run_honest.txt` and `sample_run_mitm-stolen-cert.txt` are captured
 transcripts.
+
+### Week 11 — Cross-site scripting
+
+```bash
+uv run week-11/xss-lab/app.py            # vulnerable, http://127.0.0.1:8000
+uv run week-11/xss-lab/app.py --safe     # the three bugs fixed
+```
+
+**`xss-lab/`** — one small Flask site with the three classic flavours of XSS
+side by side, a deliberately vulnerable target in the spirit of DVWA or WebGoat.
+`/search` is **reflected** (your input is echoed into one response), `/guestbook`
+is **stored** (your input is saved and runs for every later visitor), and
+`/welcome` is **DOM-based** (the server never sees the payload; the page's own
+JavaScript reads it from the URL `#fragment` and writes it into the document).
+
+All three are the same mistake — untrusted data reaching an HTML or JavaScript
+context without being encoded for it — so the browser parses an attacker's
+markup as if the developer had written it. Each page ships a harmless
+`alert(document.domain)` proof-of-concept and an explanation of its delivery
+model. `--safe` turns on output encoding for the server-side pair and switches
+the client sink from `innerHTML` to `textContent`, so you can fire the same
+payloads at both and watch the fix work.
+See [`week-11/xss-lab/README.md`](week-11/xss-lab/README.md).
+
+> **Ethics:** vulnerable by design, for teaching, on localhost only. Never
+> expose it, and use these techniques only on systems you own or have written
+> authorisation to test.
 
 ---
 

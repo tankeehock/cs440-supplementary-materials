@@ -228,8 +228,9 @@ Now the stack looks like:
   [ 8] 0x41414141   [ 9] 0x41414141   [10] 0x42424242   [11] ...
 ```
 
-Slots [4]–[9] are full of `0x41` (`'A'`), and slot **[10] is now
-`0x42424242`** (`'BBBB'`) — **you overwrote the return address.** (The program
+Slots [5]–[9] are full of `0x41` (`'A'`) — and slot [4] partly so, since `buf`
+starts mid-slot — while slot **[10] is now `0x42424242`** (`'BBBB'`) — **you
+overwrote the return address.** (The program
 crashes a moment later when `X()` returns into `0x42424242`; the unbuffered
 dump prints first, so you still see it.)
 

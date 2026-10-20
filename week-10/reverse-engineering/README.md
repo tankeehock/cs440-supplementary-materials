@@ -146,7 +146,7 @@ How to read a hex-dump line: the leftmost column (`2010`) is the **address**;
 the middle columns are the raw **bytes** in hex; the right column is those same
 bytes shown as text (a `.` wherever a byte isn't printable). So at address
 `0x2010` there are 18 noise bytes — `11 40 42 07 …` — and right after them, at
-`0x201b`, the printable string `cs440`. Two constant arrays sitting side by
+`0x2022`, the printable string `cs440`. Two constant arrays sitting side by
 side. You don't yet know what they *mean* — so read the code that uses them.
 
 ## Step 4 — read the comparison loop
