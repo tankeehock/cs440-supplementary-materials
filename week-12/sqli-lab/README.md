@@ -168,6 +168,90 @@ bound parameters, never concatenate them into the query.**
 
 ---
 
+## Remediation
+
+In priority order — the first item is the fix, the rest are depth.
+
+1. **Use parameterised queries / prepared statements for every value, without
+   exception.** Placeholders (`?`, `%s`, `:name`) with the values passed
+   separately to `execute()` is the remediation for all three bugs here. There is
+   no input this does not cover — if a value reaches the query, it is bound.
+2. **Prefer an ORM or query builder that parameterises by default** (SQLAlchemy,
+   Django ORM, …). When you must drop to raw SQL, *still* bind parameters —
+   `text("... WHERE id = :id")` with a params dict, never an f-string into
+   `text()`.
+3. **Allow-list dynamic identifiers.** Table names, column names, and
+   `ORDER BY` / sort direction cannot be parameterised, so map user input through
+   a fixed server-side dictionary of permitted values and reject anything else —
+   never interpolate the raw string.
+4. **Run the app on a least-privilege database account** — only the tables and
+   operations it needs, no DDL. If `/search`'s account cannot read `users`, a
+   UNION into it fails regardless of the injection.
+5. **Validate input by type/format** (an id must parse as an integer, etc.) as a
+   secondary narrowing — useful, but not a substitute for binding.
+6. **Return generic errors to users and log the detail server-side.** The verbose
+   SQLite error here handed over the column count; hiding it turns easy
+   error-based injection back into slow blind work.
+
+A WAF can detect and slow common payloads, but treat it as monitoring, not a
+fix — the remediation is parameterisation in the code.
+
+---
+
+## Finding it in a code review (interview checklist)
+
+Same method as hunting XSS, different sink: trace **untrusted input into a SQL
+statement** and ask whether it arrives as a bound *parameter* or as part of the
+query *string*. If the value is in the string, it's a finding.
+
+**Sources:** `request.args` / `form` / `json`, headers, cookies, path segments —
+and values read back from the database (**second-order** injection: stored now,
+concatenated into a query later).
+
+**Sinks — any SQL built from a string:**
+
+| Kind | What to look for |
+| --- | --- |
+| string-built SQL | `execute(f"... {x} ...")`, `execute("..." % x)`, `execute("..." + x)`, `.format()`, JS template literals `` db.query(`... ${x}`) `` |
+| ORM escape hatches | SQLAlchemy `text(f"...")` / `session.execute(text(...))`, Django `.raw()` / `.extra()` / `RawSQL`, Sequelize `sequelize.query`, Knex `.whereRaw` / `.raw` |
+| dynamic **identifiers** | `ORDER BY {col}`, table/column names, `LIMIT`/`OFFSET`, `ASC`/`DESC` from input — these **cannot** be parameterised, so even otherwise-safe code is injectable here unless the value is checked against an allow-list |
+
+**Safe shape vs unsafe shape** — the thing to pattern-match by eye:
+
+```python
+execute("... WHERE id = ?",  (id,))   # safe: ? is a VALUE slot
+execute(f"... WHERE id = {id}")       # injectable: f-string
+execute("... WHERE id = %s", (id,))   # safe: %s is a PLACEHOLDER (DB-API)...
+execute("... WHERE id = %s" % id)     # injectable: ...but % id is formatting
+```
+
+The last two lines are the classic interview trap: the same `%s`, opposite
+safety, decided entirely by whether the params go in `execute()`'s second
+argument or get formatted into the string first. (The placeholder *style* is
+driver-specific — this lab's `sqlite3` uses `?`, while psycopg2/MySQL use `%s` —
+but the data-vs-string distinction is identical in every one.)
+
+**Grep first:** `execute(` near `f"`, `%`, `.format`, or `+`; plus `text(`,
+`.raw(`, `.extra(`, `RawSQL`, `whereRaw`, and `ORDER BY`.
+
+**Then ask:** is *every* user value bound as a parameter? Is any SQL assembled by
+concatenation? Are there dynamic identifiers / `ORDER BY` from input (and are they
+allow-listed)? Is a field that "must be an integer" actually validated as one —
+or just dropped in because it's "only a number"? (This lab's `/track` is
+injectable precisely because the id is numeric and unquoted: no quote needed to
+break out.)
+
+**Don't trust the output channel to clear it.** A query that shows no rows can
+still be a blind oracle (found/not-found, or timing), and a query whose errors
+reach the user hands over column counts and table names for free.
+
+In this lab the three findings share one root cause — a value concatenated where
+a parameter belonged: the login `WHERE` built with an f-string (auth bypass), the
+`LIKE` pattern built with an f-string (UNION), and the numeric `WHERE id =
+{order}` (blind).
+
+---
+
 ## Where SQL injection stops
 
 Parameterised queries are the fix. These help in depth, but none replaces it:

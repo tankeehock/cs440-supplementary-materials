@@ -118,6 +118,83 @@ is what takes effort, not remembering.
 
 ---
 
+## Remediation
+
+In priority order — the first item is the fix, the rest are depth.
+
+1. **Contextually output-encode every piece of untrusted data, and prefer a
+   template engine that does it by default.** Jinja2 (Flask's default via
+   `render_template`), Django templates, and React JSX all auto-escape for the
+   HTML context. The remediation for the server-side bugs in this lab is simply
+   *to stop hand-concatenating HTML* and let the engine escape — and to not turn
+   that escaping off (`| safe`, `{% autoescape false %}`, `Markup()`,
+   `dangerouslySetInnerHTML`, `v-html`).
+2. **For the DOM, write data as text, not markup.** Assign `textContent`, use
+   `setAttribute` / `createElement`, or framework data binding. Treat `innerHTML`,
+   `outerHTML`, `insertAdjacentHTML`, and `document.write` as code sinks.
+3. **If you must accept rich HTML, sanitise with a vetted library and a strict
+   allow-list** — [DOMPurify](https://github.com/cure53/DOMPurify) in the browser,
+   `nh3`/`bleach` on the server. Never a hand-rolled regex "sanitiser"; they are
+   bypassed as a sport.
+4. **Add a Content-Security-Policy** that forbids inline script
+   (`script-src 'self'` with per-response nonces/hashes, no `unsafe-inline`). A
+   good CSP turns a missed encoding into an inert string instead of code.
+5. **Set session cookies `HttpOnly`, `Secure`, `SameSite`.** `HttpOnly` keeps a
+   payload from reading the token via `document.cookie` (it does not stop the
+   payload acting as the user — encoding is still the fix).
+6. **Lock down DOM sinks with [Trusted Types](https://web.dev/articles/trusted-types)**
+   (`Content-Security-Policy: require-trusted-types-for 'script'`) so assigning a
+   raw string to `innerHTML` throws — a structural guarantee against DOM XSS.
+
+Input validation (allow-listing expected characters) is worth doing but is
+**secondary**: it narrows the attack surface, while output encoding is what
+actually makes the data safe in its destination.
+
+---
+
+## Finding it in a code review (interview checklist)
+
+Handed this code cold, you find XSS by tracing **untrusted data from a source to
+a sink**: does any value a user controls reach an HTML or JavaScript context
+without being encoded *for that context*? In a framework that auto-escapes, the
+bug is wherever someone opted *out* — so you are hunting for the escape hatch.
+
+**Sources — where untrusted data enters:**
+
+- Server: `request.args` / `form` / `values` / `json`, `request.headers`,
+  `request.cookies`, path segments.
+- Client: `location.*` (`search`, `hash`, `href`), `document.referrer`,
+  `document.cookie`, `window.name`, `postMessage` data — and, for **stored** XSS,
+  anything read back from a database, file, or API.
+
+**Sinks — where it becomes markup or code:**
+
+| Kind | What to look for |
+| --- | --- |
+| hand-built HTML | f-string / `+` / `%` / `.format()` into HTML, `Response(html)` |
+| escaping switched off | Jinja `\| safe`, `{% autoescape false %}`, `Markup(...)`, `render_template_string(user_data)` |
+| DOM HTML sinks | `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write(ln)`, jQuery `.html()` / `.append(str)` / `$(str)`, React `dangerouslySetInnerHTML`, Vue `v-html`, Angular `[innerHTML]` / `bypassSecurityTrust*` |
+| code sinks (worse) | `eval`, `Function`, `setTimeout`/`setInterval("string")`, a `javascript:` URL assigned to `href` / `src` / `location` |
+
+**Grep first:** `innerHTML`, `document.write`, `dangerouslySetInnerHTML`,
+`v-html`, `|safe`, `Markup(`, `render_template_string(`, `eval(`.
+
+**Then ask, for each hit:** where does the value come from, does it cross a trust
+boundary, what context is it dropped into (HTML body? attribute? JS string? URL?
+CSS?), and is it encoded for *that* context — automatically, or by hand?
+
+**Context is the trap.** Escaping for an HTML body (`<` → `&lt;`) does nothing
+inside a `<script>` block, a `javascript:` URL, or an unquoted attribute. A value
+"sanitised" for the wrong context is still XSS.
+
+In this lab the three findings are exactly those shapes: a request param reaching
+the HTML body through the no-op `enc()` (reflected), a stored value re-rendered
+the same way (stored), and `location.hash` assigned to `innerHTML` (DOM-based).
+Note the DOM one has **no server-side tell at all** — the only way to find it is
+to read the client-side JavaScript, which is the step reviewers most often skip.
+
+---
+
 ## Where XSS stops
 
 Output encoding is the primary fix, but defence in depth helps when something

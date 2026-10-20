@@ -136,6 +136,35 @@ and never mutate state on a GET.**
 
 ---
 
+## Remediation
+
+In priority order.
+
+1. **Require an anti-CSRF token on every state-changing request** — the
+   synchronizer token pattern: an unpredictable, per-session value embedded in
+   your forms and verified (constant-time) on the server. Use your framework's
+   built-in protection rather than rolling your own: Flask-WTF `CSRFProtect`,
+   Django's CSRF middleware, Rails `protect_from_forgery`, Spring Security CSRF.
+2. **Set session cookies `SameSite=Lax` (or `Strict`)** — the modern default that
+   stops the browser attaching the cookie to cross-site requests, blocking the
+   classic form/`<img>` attack before it starts. Use `Strict` where it does not
+   break navigation; keep the token even so.
+3. **Never change state on a GET.** Use POST/PUT/DELETE for mutations and enforce
+   the method server-side, so a link, prefetch, or `<img>` can never trigger one.
+4. **For token-authenticated APIs, carry the credential outside cookies** — a
+   bearer token in an `Authorization` header, or a custom `X-CSRF-Token`. A
+   cross-site page cannot set those headers, so such requests are not
+   CSRF-forgeable. (The double-submit-cookie pattern is a lighter, stateless
+   variant — weaker if a subdomain can write your cookies.)
+5. **Verify `Origin` / `Referer`** on sensitive endpoints as a secondary check,
+   and **re-authenticate or step up** (password / 2FA re-prompt) for the highest-
+   impact actions (transfers, email/password change).
+6. **Fix XSS first.** A script running on your own origin can read the CSRF token
+   and defeat every control above — see the
+   [xss-lab](../../week-11/xss-lab/).
+
+---
+
 ## A note on SameSite cookies (the modern first line of defence)
 
 Why isn't the whole web constantly robbed this way? Because browsers now default

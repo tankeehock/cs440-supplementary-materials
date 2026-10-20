@@ -170,6 +170,34 @@ and never needed CORS in the first place.
 
 ---
 
+## Remediation
+
+In priority order.
+
+1. **Validate `Origin` against an exact, closed allow-list** of the origins you
+   actually trust, compared with `==` (not `startswith`, `in`, `endswith`, or a
+   regex). Echo back only the single matched origin, never the raw request value.
+2. **Never pair `Access-Control-Allow-Credentials: true` with `*`.** If a
+   response needs credentials, `Access-Control-Allow-Origin` must be one exact
+   origin. If it truly needs none, drop the credentials header entirely rather
+   than widening the origin.
+3. **Send `Vary: Origin`** whenever the allow-origin value depends on the request
+   origin, so a cache cannot serve one origin's response to another.
+4. **Scope the policy to what's needed.** Only add CORS headers on the specific
+   endpoints meant for cross-origin use; keep `Access-Control-Allow-Methods` and
+   `-Allow-Headers` to the minimum. Default to *no* CORS headers.
+5. **Use a maintained CORS middleware, configured explicitly** — e.g. Flask-CORS
+   with `origins=["https://app.example.com"]`, never `origins="*"` on a
+   credentialed API, and never a reflect-all shim.
+6. **Never allow-list the literal `null` origin** (sandboxed iframes and some
+   redirects send it; an attacker can arrange to be `null`).
+
+Remember what CORS does *not* fix: it controls who may **read** a response, so it
+is not authorization (authenticate the request on its own merits, never on
+`Origin`) and not CSRF protection (see the [csrf-lab](../../week-12/csrf-lab/)).
+
+---
+
 ## A note on SameSite cookies (why the cookie arrives at all)
 
 For the attack to matter, two separate things must happen: the browser must
