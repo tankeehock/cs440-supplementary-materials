@@ -24,12 +24,17 @@ rebuilt here as small, readable, self-contained labs:
 | [`reverse-engineering/`](reverse-engineering/) | **rev** | The check that guards the flag is *in the binary* — read the binary and the check reveals the answer. |
 | [`stack-visualizer/`](stack-visualizer/) | **pwn** | Print the stack before and after a too-long `strcpy` and *watch* your input overwrite the saved return address, byte by byte. |
 | [`buffer-overflow/`](buffer-overflow/) | **pwn** | The same overwrite with real CTF tooling (64-bit, `pwntools`, cyclic patterns): redirect execution to a `win()` function. |
+| [`ret2libc/`](ret2libc/) | **pwn** | The same overwrite, but with *no* `win()` and the stack non-executable: chain a return into libc's `system("/bin/sh")` to pop a shell. |
 
-Suggested order: **reverse-engineering → stack-visualizer → buffer-overflow.**
-Reverse engineering teaches you to *read* a compiled program; stack-visualizer
-shows you an overflow happening slot by slot in a tiny 32-bit program; and
-buffer-overflow redoes that overflow the way a real CTF would. If the tooling in
-the last lab ever feels abstract, the middle lab is the picture behind it.
+Suggested order: **reverse-engineering → stack-visualizer → buffer-overflow →
+ret2libc.** Reverse engineering teaches you to *read* a compiled program;
+stack-visualizer shows you an overflow happening slot by slot in a tiny 32-bit
+program; buffer-overflow redoes that overflow the way a real CTF would and jumps
+to a `win()` planted in the binary; and ret2libc removes that `win()` crutch —
+with no attacker-friendly function to jump to and the stack marked
+non-executable, you reuse code that already ships in the C library and resolve
+its addresses past ASLR. If the tooling in the pwn labs ever feels abstract, the
+stack-visualizer lab is the picture behind it.
 
 ---
 
@@ -56,6 +61,14 @@ Neither is a kernel bug or a memory-corruption exploit against your machine.
 Challenge 1 is *information that was never actually hidden*; challenge 2 is *a
 program trusting the length of its own input*. Both are the program working
 exactly as written — the bug is in what it was written to do.
+
+Once you control the return address (challenge 2), the only question left is
+*where to point it*. The `buffer-overflow` lab points it at a `win()` function
+planted in the binary for you. The `ret2libc` lab takes that crutch away: with
+no `win()` and a non-executable stack, you can neither jump to a convenient
+function nor run your own shellcode, so you point the return address at code
+that already ships inside the C library — `system("/bin/sh")` — and compute its
+address despite ASLR. Same overwrite, a real target's constraints.
 
 ---
 
@@ -85,7 +98,7 @@ exactly as written — the bug is in what it was written to do.
 Each folder is independent. The pattern is always the same:
 
 ```bash
-cd week-10/reverse-engineering     # or stack-visualizer, or buffer-overflow
+cd week-10/reverse-engineering     # or stack-visualizer, buffer-overflow, ret2libc
 docker build -t cs440-rev .        # build the image (first time only)
 docker run -it --rm cs440-rev      # drop into the box
 ```
