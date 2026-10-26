@@ -111,7 +111,7 @@ takes a few extra seconds while uv downloads it.
 ├── week-7/                 # access control lists (CLI lab) + an RBAC web server
 ├── week-9/                 # TLS 1.3 handshake by hand, key logs, MITM variants
 ├── week-10/                # binary exploitation challenges, container-only
-└── week-11/                # cross-site scripting: reflected, stored, DOM-based
+└── week-11/                # web: XSS, CORS misconfiguration, Content-Security-Policy
 ```
 
 ---
@@ -424,31 +424,52 @@ attacks, optional `openssl s_client` / Wireshark / post-quantum
 `sample_run_honest.txt` and `sample_run_mitm-stolen-cert.txt` are captured
 transcripts.
 
-### Week 11 — Cross-site scripting
+### Week 11 — Web security: XSS, CORS, CSP
 
 ```bash
-uv run week-11/xss-lab/app.py            # vulnerable, http://127.0.0.1:8000
-uv run week-11/xss-lab/app.py --safe     # the three bugs fixed
+uv run week-11/xss-lab/app.py            # XSS, vulnerable, http://127.0.0.1:8000
+uv run week-11/cors-lab/app.py           # CORS, bank :8000 / evil :9000
+uv run week-11/csp-lab/app.py            # CSP, vulnerable, http://127.0.0.1:8000
+# each takes --safe to flip on the fix
 ```
 
-**`xss-lab/`** — one small Flask site with the three classic flavours of XSS
-side by side, a deliberately vulnerable target in the spirit of DVWA or WebGoat.
-`/search` is **reflected** (your input is echoed into one response), `/guestbook`
-is **stored** (your input is saved and runs for every later visitor), and
-`/welcome` is **DOM-based** (the server never sees the payload; the page's own
-JavaScript reads it from the URL `#fragment` and writes it into the document).
+Three deliberately vulnerable Flask targets in the spirit of DVWA or WebGoat,
+each with a `--safe` flag that flips on the fix so you can fire the same payload
+at both modes.
 
-All three are the same mistake — untrusted data reaching an HTML or JavaScript
-context without being encoded for it — so the browser parses an attacker's
-markup as if the developer had written it. Each page ships a harmless
-`alert(document.domain)` proof-of-concept and an explanation of its delivery
-model. `--safe` turns on output encoding for the server-side pair and switches
-the client sink from `innerHTML` to `textContent`, so you can fire the same
-payloads at both and watch the fix work.
+**`xss-lab/`** — the three classic flavours of cross-site scripting side by
+side. `/search` is **reflected** (your input is echoed into one response),
+`/guestbook` is **stored** (your input is saved and runs for every later
+visitor), and `/welcome` is **DOM-based** (the server never sees the payload; the
+page's own JavaScript reads it from the URL `#fragment`). All three are the same
+mistake — untrusted data reaching an HTML or JavaScript context without being
+encoded for it. `--safe` turns on output encoding for the server-side pair and
+switches the client sink from `innerHTML` to `textContent`.
 See [`week-11/xss-lab/README.md`](week-11/xss-lab/README.md).
 
+**`cors-lab/`** — cross-origin resource sharing misconfiguration, run as two
+origins: a logged-in "bank" API (`:8000`) and an attacker page (`:9000`) whose
+JavaScript tries to read the bank's cookie'd response. Three broken policies —
+`/api/reflect` echoes the request Origin + allows credentials (total break),
+`/api/naive` trusts a `startswith()` check (the sibling port slips through), and
+`/api/wildcard` sends `*` (the subtle one: the browser blocks the credentialed
+read but the endpoint is still open to every origin). `--safe` replaces all three
+with one exact-origin allow-list.
+See [`week-11/cors-lab/README.md`](week-11/cors-lab/README.md).
+
+**`csp-lab/`** — Content-Security-Policy as the *second wall* against XSS, and the
+capstone to `xss-lab`. Every page ships the same reflected-XSS bug; only the CSP
+header changes. `/none` sends no policy (the injection runs), `/unsafe` sends a
+real-looking policy neutered by `'unsafe-inline'` (it still runs — the classic
+false sense of security), and `/strict` sends a per-response **nonce** policy
+(the injected script has no nonce, so the browser refuses it while the page's own
+script still runs). The bug is never fixed here — the CSP just makes it inert,
+showing how a strict policy turns a missed encoding into a dead string. `--safe`
+applies the strict policy to every page.
+See [`week-11/csp-lab/README.md`](week-11/csp-lab/README.md).
+
 > **Ethics:** vulnerable by design, for teaching, on localhost only. Never
-> expose it, and use these techniques only on systems you own or have written
+> expose them, and use these techniques only on systems you own or have written
 > authorisation to test.
 
 ---
